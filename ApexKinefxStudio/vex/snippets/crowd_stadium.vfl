@@ -1,0 +1,70 @@
+// ApexKinefxStudio - stateless stadium crowd clip layering.  Run Over: Primitives
+//
+// Input 0: agent primitives (from Crowd Source / Copy agents to seat points).
+// Each agent loops an idle clip with a random time offset, and blends into a
+// cheer clip around every "event" frame (a goal, a song...) with a random
+// reaction delay and duration, plus random spontaneous cheers. Nothing is
+// simulated, so it scrubs and renders on the farm per frame.
+// Clip names that do not exist on the agent fall back to its first clip.
+
+function string sc_clip(int agent_prim; string want)
+{
+    string cat[] = agentclipcatalog(0, agent_prim);
+    if (find(cat, want) >= 0)
+        return want;
+    return len(cat) > 0 ? cat[0] : want;
+}
+
+string idle = sc_clip(@primnum, chs("idle_clip"));
+string cheer = sc_clip(@primnum, chs("cheer_clip"));
+float fps = 1.0 / max(@TimeInc, 1e-4);
+float t = @Time;
+int id = @primnum;
+float seed = chf("seed");
+
+float idle_len = max(agentcliplength(0, @primnum, idle), 1e-3);
+float cheer_len = max(agentcliplength(0, @primnum, cheer), 1e-3);
+float idle_time = t + random(set(id, seed, 1)) * idle_len;
+idle_time -= floor(idle_time / idle_len) * idle_len;
+
+// Excitement: strongest response to each event frame.
+float react_max = chf("reaction_delay_max");
+float hold = chf("cheer_hold");
+float fade = max(chf("blend_time"), 1e-3);
+float enthusiasm = fit01(random(set(id, seed, 2)), chf("enthusiasm_min"), 1.0);
+float w = 0;
+float cheer_start = -1e6;
+foreach (string ev; split(chs("event_frames"), " "))
+{
+    if (ev == "") continue;
+    float ev_t = (atof(ev) - 1) / fps;
+    float st = ev_t + random(set(id, seed, 3, ev_t)) * react_max;
+    float dur = hold * fit01(random(set(id, seed, 4, ev_t)), 0.6, 1.4);
+    float wi = smooth(st, st + fade, t) * (1 - smooth(st + dur, st + dur + fade, t));
+    if (wi > w)
+    {
+        w = wi;
+        cheer_start = st;
+    }
+}
+// spontaneous cheers: a few agents at a time
+float slot = chf("spontaneous_period");
+if (slot > 0)
+{
+    float k = floor(t / slot);
+    if (random(set(id, seed, 5, k)) < chf("spontaneous_probability"))
+    {
+        float st = k * slot + random(set(id, seed, 6, k)) * slot * 0.5;
+        float wi = smooth(st, st + fade, t) * (1 - smooth(st + hold, st + hold + fade, t));
+        if (wi > w) { w = wi; cheer_start = st; }
+    }
+}
+w *= enthusiasm;
+float cheer_time = clamp(t - cheer_start, 0, cheer_len);
+if (chi("loop_cheer"))
+    cheer_time = (t - cheer_start) - floor((t - cheer_start) / cheer_len) * cheer_len;
+
+setagentclipnames(0, @primnum, array(idle, cheer));
+setagentcliptimes(0, @primnum, array(idle_time, cheer_time));
+setagentclipweights(0, @primnum, array(1 - w, w));
+f@cheer = w;

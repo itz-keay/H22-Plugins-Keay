@@ -1,0 +1,76 @@
+// ApexKinefxStudio - tank tread links along track loops.     Run Over: Detail
+//
+// Input 0: closed track loop curves in REST vehicle space, one per side, with
+//          prim s@side = "l" / "r" (built by rigging/vehicles.py).
+// Input 1: animated vehicle skeleton (detail f@track_offset_l / _r and the
+//          "root" joint from vehicle_drive.vfl).
+// Input 2: ground (optional).
+// Output: one point per tread link with p@orient, v@up, f@pscale, ready for
+// Copy to Points. Links slide along the loop by the distance that side
+// travelled (skid steering makes sides differ), and links on the bottom run
+// conform to the ground.
+#include "aks_skeleton.h"
+#include "aks_ground.h"
+
+float spacing = max(chf("link_spacing"), 1e-3);
+float bottom = chf("bottom_run_height");
+float thickness = chf("link_thickness");
+float probe = chf("ray_probe");
+int root = findattribval(1, "point", "name", "root");
+matrix wroot = ident();
+if (root >= 0)
+    wroot = aks_world(1, root);
+
+int nprim = nprimitives(0);
+for (int pr = 0; pr < nprim; pr++)
+{
+    string side = prim(0, "side", pr);
+    float off = detail(1, side == "l" ? "track_offset_l" : "track_offset_r");
+    int pts[] = primpoints(0, pr);
+    int m = len(pts);
+    if (m < 3) continue;
+    vector loop[];
+    float cum[];
+    float acc = 0;
+    for (int i = 0; i < m; i++)
+    {
+        vector p = point(0, "P", pts[i]);
+        if (i > 0) acc += distance(p, loop[i - 1]);
+        append(loop, p);
+        append(cum, acc);
+    }
+    float total = acc + distance(loop[m - 1], loop[0]);
+    int links = max(3, int(total / spacing));
+    float step = total / links;
+    for (int k = 0; k < links; k++)
+    {
+        // links run backward along the loop's top as the tank drives forward
+        float d = k * step - off;
+        d = d - floor(d / total) * total;
+        int seg = 0;
+        for (int i = 1; i < m; i++)
+            if (cum[i] <= d) seg = i;
+        int nxt = (seg + 1) % m;
+        float seglen = seg == m - 1 ? total - cum[seg] : cum[seg + 1] - cum[seg];
+        float t = seglen > 0 ? (d - cum[seg]) / seglen : 0;
+        vector p = lerp(loop[seg], loop[nxt], t);
+        vector tng = normalize(loop[nxt] - loop[seg]);
+        vector wp = p * wroot;
+        vector wt = normalize(tng * matrix3(wroot));
+        if (p.y < bottom)
+        {
+            float gh = aks_ground_h(2, wp, probe, wp.y - thickness);
+            wp.y = max(wp.y, gh + thickness);
+        }
+        vector side_axis = normalize(set(1, 0, 0) * matrix3(wroot));
+        vector up = normalize(cross(wt, side_axis));
+        int np = addpoint(0, wp);
+        setpointattrib(0, "orient", np, quaternion(maketransform(wt, up)));
+        setpointattrib(0, "up", np, up);
+        setpointattrib(0, "pscale", np, 1.0);
+        setpointattrib(0, "side", np, side);
+    }
+}
+// remove the input loops, keep only the new link points
+for (int pr = 0; pr < nprim; pr++)
+    removeprim(0, pr, 1);

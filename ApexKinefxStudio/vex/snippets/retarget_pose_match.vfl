@@ -1,0 +1,62 @@
+// ApexKinefxStudio - match the source rest pose to the target's.  Run Over: Detail
+//
+// Input 0: source skeleton rest pose (e.g. Mixamo T-pose).
+// Input 1: target skeleton rest pose with s@retarget_src on mapped joints.
+//
+// Walks the source hierarchy parent-first. For each mapped source joint with
+// a mapped child, it rotates the joint (and its whole subtree) by the minimal
+// rotation that aligns the source bone direction with the target's
+// corresponding bone. Bone lengths stay the source's. The result is the
+// source skeleton standing in the target's rest pose (T-pose vs A-pose,
+// splayed fingers, bent knees...), which is what world-delta retargeting
+// measures animation against.
+#include "aks_skeleton.h"
+
+int par[] = aks_parents(0);
+int order[] = aks_topo_order(par);
+int n = npoints(0);
+matrix W[] = aks_load_world(0);
+int tpar[] = aks_parents(1);
+
+int nt = npoints(1);
+string tsrc[];
+resize(tsrc, nt);
+for (int i = 0; i < nt; i++)
+{
+    string s = point(1, "retarget_src", i);
+    tsrc[i] = s;
+}
+
+foreach (int j; order)
+{
+    string sname = point(0, "name", j);
+    int t = find(tsrc, sname);
+    if (t < 0 || sname == "") continue;
+    // find a target child whose source joint lives under j
+    int sc = -1;
+    int tc = -1;
+    for (int k = 0; k < nt; k++)
+    {
+        if (tpar[k] != t || tsrc[k] == "") continue;
+        int cand = aks_find(0, tsrc[k]);
+        if (cand >= 0 && aks_is_descendant(par, cand, j))
+        {
+            sc = cand;
+            tc = k;
+            break;
+        }
+    }
+    if (sc < 0) continue;
+    vector tj = point(1, "P", t);
+    vector tk = point(1, "P", tc);
+    vector tgt_dir = tk - tj;
+    vector cur_dir = aks_pos(W[sc]) - aks_pos(W[j]);
+    if (length(tgt_dir) < 1e-8 || length(cur_dir) < 1e-8) continue;
+    matrix wj_old = W[j];
+    W[j] = aks_aim_world(W[j], cur_dir, tgt_dir);
+    matrix delta = invert(wj_old) * W[j];
+    for (int i = 0; i < n; i++)
+        if (aks_is_descendant(par, i, j))
+            W[i] = W[i] * delta;
+}
+aks_commit(par, W);

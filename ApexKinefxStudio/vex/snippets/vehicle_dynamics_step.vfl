@@ -1,0 +1,135 @@
+// ApexKinefxStudio - vehicle secondary dynamics.      SOP Solver step, Detail
+//
+// Input 0: previous frame (state).  Input 1: current kinematic skeleton from
+// vehicle_drive.vfl (with its detail attributes).
+//
+// Adds on top of the kinematic pose:
+//  * body pitch / roll / heave springs: the body chases the kinematic tilt
+//    with a damped spring (overshoot on braking, turn-in, bumps). Vertical
+//    acceleration of the chassis (terrain bumps) kicks the heave spring.
+//  * vibration: engine idle buzz fading out with speed + road noise that
+//    scales with speed and terrain roughness
+//  * drift wheel spin: driven wheels over-spin while the car is sliding
+// Wheels stay on the ground (tyres follow terrain); only the body and parts
+// parented to it are displaced.
+#include "aks_skeleton.h"
+#include "aks_vehicle.h"
+
+int par[] = aks_parents(1);
+int order[] = aks_topo_order(par);
+int n = npoints(1);
+matrix W[] = aks_load_world(1);
+matrix W_old[] = W;
+int changed[];
+resize(changed, n);
+
+float dt = max(@TimeInc, 1e-4);
+int sub = max(chi("substeps"), 1);
+float hdt = dt / sub;
+int first = !hasdetailattrib(0, "dyn_pitch");
+
+float v = detail(1, "speed");
+float slip = detail(1, "slip");
+float rough = detail(1, "roughness");
+float tgt_pitch = detail(1, "body_pitch");
+float tgt_roll = detail(1, "body_roll");
+
+float k_ang = chf("angular_stiffness");
+float z_ang = chf("angular_damping_ratio");
+float k_heave = chf("heave_stiffness");
+float z_heave = chf("heave_damping_ratio");
+float bump_gain = chf("bump_gain");
+
+// state
+float pitch = tgt_pitch, pitch_v = 0, roll = tgt_roll, roll_v = 0, heave = 0, heave_v = 0;
+float root_y = 0, root_vy = 0;
+int root = aks_find(1, "root");
+if (root >= 0) root_y = aks_pos(W[root]).y;
+float prev_root_y = root_y, prev_root_vy = 0;
+if (!first)
+{
+    pitch = detail(0, "dyn_pitch");  pitch_v = detail(0, "dyn_pitch_v");
+    roll = detail(0, "dyn_roll");    roll_v = detail(0, "dyn_roll_v");
+    heave = detail(0, "dyn_heave");  heave_v = detail(0, "dyn_heave_v");
+    prev_root_y = detail(0, "dyn_root_y");
+    prev_root_vy = detail(0, "dyn_root_vy");
+}
+root_vy = (root_y - prev_root_y) / dt;
+float root_ay = first ? 0.0 : (root_vy - prev_root_vy) / dt;
+
+float c_ang = z_ang * 2 * sqrt(k_ang);
+float c_heave = z_heave * 2 * sqrt(k_heave);
+for (int i = 0; i < sub; i++)
+{
+    pitch_v += (k_ang * (tgt_pitch - pitch) - c_ang * pitch_v) * hdt;
+    pitch += pitch_v * hdt;
+    roll_v += (k_ang * (tgt_roll - roll) - c_ang * roll_v) * hdt;
+    roll += roll_v * hdt;
+    heave_v += (-k_heave * heave - c_heave * heave_v - bump_gain * root_ay) * hdt;
+    heave += heave_v * hdt;
+}
+float max_heave = chf("max_heave");
+heave = clamp(heave, -max_heave, max_heave);
+
+setdetailattrib(0, "dyn_pitch", pitch);   setdetailattrib(0, "dyn_pitch_v", pitch_v);
+setdetailattrib(0, "dyn_roll", roll);     setdetailattrib(0, "dyn_roll_v", roll_v);
+setdetailattrib(0, "dyn_heave", heave);   setdetailattrib(0, "dyn_heave_v", heave_v);
+setdetailattrib(0, "dyn_root_y", root_y); setdetailattrib(0, "dyn_root_vy", root_vy);
+
+// vibration
+float t = @Time;
+float idle = chf("idle_amplitude") * (1 - smooth(0, max(chf("idle_fade_speed"), 1e-3), abs(v)));
+float road = chf("road_amplitude") * abs(v) * (0.2 + rough * chf("roughness_gain"));
+float amp = idle + road;
+float f = chf("vibration_frequency");
+float vib_h = (noise(set(t * f, 1.7, 0)) - 0.5) * 2 * amp;
+float vib_p = (noise(set(t * f, 5.3, 2)) - 0.5) * 2 * amp * chf("vibration_rotation");
+float vib_r = (noise(set(t * f, 9.1, 4)) - 0.5) * 2 * amp * chf("vibration_rotation");
+
+int body = aks_find(1, "body");
+if (body >= 0)
+{
+    matrix3 r_root = ident();
+    if (root >= 0)
+        r_root = aks_rot(W[root]);
+    vector up = {0, 1, 0} * r_root;
+    // delta between the dynamic and kinematic tilt, applied about the body pivot
+    matrix3 d = aks_body_rotation(0, (pitch - tgt_pitch) + vib_p, (roll - tgt_roll) + vib_r);
+    matrix3 rb = aks_rot(W[body]);
+    // express the local delta in the body's own frame
+    W[body] = aks_compose(d * rb, aks_pos(W[body]) + up * (heave + vib_h));
+    changed[body] = 1;
+}
+
+// drift over-spin on driven wheels (integrated, so it never jumps)
+float spin_gain = chf("drift_spin");
+for (int i = 0; i < n; i++)
+{
+    string role = point(1, "role", i);
+    if (role != "wheel") continue;
+    int drives = point(1, "drives", i);
+    int steers = point(1, "steers", i);
+    float extra = 0.0;
+    if (!first)
+        extra = point(0, "extra_spin", i);
+    if (drives && !steers)
+    {
+        float rate = point(1, "spin_rate", i);
+        extra += spin_gain * abs(slip) / max(radians(chf("max_drift_ref")), 1e-3) * rate * dt;
+    }
+    setpointattrib(0, "extra_spin", i, extra);
+    W[i] = aks_compose(aks_axis_angle({1, 0, 0}, extra) * aks_rot(W[i]), aks_pos(W[i]));
+    changed[i] = 1;
+}
+
+// Everything under the body follows it, except the wheel chains.
+for (int i = 0; i < n; i++)
+{
+    string role = point(1, "role", i);
+    if (role == "suspension" || role == "steer" || role == "wheel")
+        changed[i] = 1;   // keep kinematic / already updated
+}
+// changed[] marks joints propagate must not overwrite; parts under the body
+// (role "part") are left unmarked so they follow the new body transform.
+aks_propagate(par, order, changed, W_old, W);
+aks_commit(par, W);

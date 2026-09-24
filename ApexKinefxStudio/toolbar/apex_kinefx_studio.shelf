@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<shelfDocument>
+  <!-- ApexKinefxStudio shelf. Every tool calls into the apex_studio Python package. -->
+  <toolshelf name="apex_kinefx_studio" label="ApexKinefxStudio">
+    <memberTool name="aks_retarget"/>
+    <memberTool name="aks_biped"/>
+    <memberTool name="aks_snake"/>
+    <memberTool name="aks_insect"/>
+    <memberTool name="aks_spider"/>
+    <memberTool name="aks_quadruped"/>
+    <memberTool name="aks_bird"/>
+    <memberTool name="aks_jellyfish"/>
+    <memberTool name="aks_car"/>
+    <memberTool name="aks_bike"/>
+    <memberTool name="aks_tank"/>
+    <memberTool name="aks_stadium"/>
+    <memberTool name="aks_crowd"/>
+    <memberTool name="aks_validate"/>
+  </toolshelf>
+
+  <tool name="aks_retarget" label="Retarget FBX" icon="KINEFX_retarget">
+    <script scriptType="python"><![CDATA[
+import hou
+from apex_studio import retarget
+src = hou.ui.selectFile(title="Animated source FBX (Mixamo, Cascadeur...)", pattern="*.fbx")
+if src:
+    tgt = hou.ui.selectFile(title="Target character FBX", pattern="*.fbx")
+    if tgt:
+        retarget.build_retarget(hou.text.expandString(src), hou.text.expandString(tgt))
+]]></script>
+  </tool>
+
+  <tool name="aks_biped" label="Biped Rig" icon="KINEFX_skeleton">
+    <script scriptType="python"><![CDATA[
+import hou
+from apex_studio.rigging import bipeds
+sel = hou.selectedNodes()
+mesh = sel[0].displayNode() if sel and sel[0].type().category() == hou.objNodeTypeCategory() else (sel[0] if sel else None)
+bipeds.build_biped(mesh)
+]]></script>
+  </tool>
+
+  <tool name="aks_snake" label="Snake" icon="SOP_curve">
+    <script scriptType="python"><![CDATA[
+from apex_studio.rigging import creatures
+creatures.build_snake()
+]]></script>
+  </tool>
+
+  <tool name="aks_insect" label="Insect" icon="KINEFX_skeleton">
+    <script scriptType="python"><![CDATA[
+from apex_studio.rigging import creatures
+creatures.build_insect()
+]]></script>
+  </tool>
+
+  <tool name="aks_spider" label="Spider" icon="KINEFX_skeleton">
+    <script scriptType="python"><![CDATA[
+from apex_studio.rigging import creatures
+creatures.build_spider()
+]]></script>
+  </tool>
+
+  <tool name="aks_quadruped" label="Quadruped" icon="KINEFX_skeleton">
+    <script scriptType="python"><![CDATA[
+from apex_studio.rigging import creatures
+creatures.build_quadruped()
+]]></script>
+  </tool>
+
+  <tool name="aks_bird" label="Bird" icon="KINEFX_skeleton">
+    <script scriptType="python"><![CDATA[
+from apex_studio.rigging import creatures
+creatures.build_bird()
+]]></script>
+  </tool>
+
+  <tool name="aks_jellyfish" label="Jellyfish" icon="KINEFX_skeleton">
+    <script scriptType="python"><![CDATA[
+from apex_studio.rigging import creatures
+creatures.build_jellyfish()
+]]></script>
+  </tool>
+
+  <tool name="aks_car" label="Car" icon="SOP_box">
+    <script scriptType="python"><![CDATA[
+import hou
+from apex_studio.rigging import vehicles
+sel = hou.selectedNodes()
+model = sel[0].displayNode() if sel and sel[0].type().category() == hou.objNodeTypeCategory() else None
+vehicles.build_vehicle(model, vehicle_type="car", name="aks_car")
+]]></script>
+  </tool>
+
+  <tool name="aks_bike" label="Bike" icon="SOP_box">
+    <script scriptType="python"><![CDATA[
+import hou
+from apex_studio.rigging import vehicles
+sel = hou.selectedNodes()
+model = sel[0].displayNode() if sel and sel[0].type().category() == hou.objNodeTypeCategory() else None
+vehicles.build_vehicle(model, vehicle_type="bike", name="aks_bike", speed=15.0)
+]]></script>
+  </tool>
+
+  <tool name="aks_tank" label="Tank" icon="SOP_box">
+    <script scriptType="python"><![CDATA[
+import hou
+from apex_studio.rigging import vehicles
+sel = hou.selectedNodes()
+model = sel[0].displayNode() if sel and sel[0].type().category() == hou.objNodeTypeCategory() else None
+vehicles.build_vehicle(model, vehicle_type="tank", name="aks_tank", speed=5.0)
+]]></script>
+  </tool>
+
+  <tool name="aks_stadium" label="Stadium Crowd" icon="SOP_agent">
+    <script scriptType="python"><![CDATA[
+import hou
+from apex_studio import crowd
+sel = hou.selectedNodes()
+agent = sel[0].displayNode() if sel and sel[0].type().category() == hou.objNodeTypeCategory() else None
+crowd.build_stadium(agent)
+]]></script>
+  </tool>
+
+  <tool name="aks_crowd" label="State Machine Crowd" icon="SOP_agent">
+    <script scriptType="python"><![CDATA[
+import hou
+from apex_studio import crowd
+sel = hou.selectedNodes()
+agent = sel[0].displayNode() if sel and sel[0].type().category() == hou.objNodeTypeCategory() else None
+crowd.build_crowd(agent)
+]]></script>
+  </tool>
+
+  <tool name="aks_validate" label="Validate" icon="BUTTONS_check">
+    <script scriptType="python"><![CDATA[
+import apex_studio.validate as v
+v.report(verbose=True)
+]]></script>
+  </tool>
+</shelfDocument>

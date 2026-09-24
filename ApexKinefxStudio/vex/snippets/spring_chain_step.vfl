@@ -1,0 +1,120 @@
+// ApexKinefxStudio - spring chains + jiggle.           SOP Solver step, Detail
+//
+// Input 0: previous frame (state).  Input 1: current animated skeleton.
+//
+// Joints matching `joints` (wildcards, e.g. "tail_* antenna_*") are simulated
+// as verlet particles that are pulled toward their animated position
+// (`goal_stiffness`), damped, affected by gravity and air drag, and kept at
+// their bone length from the parent (chain mode). The first matching joint of
+// a chain stays pinned to the animation. Parents are re-aimed at the
+// simulated children so the rotations follow. `jiggle` mode skips the length
+// constraint and aiming: joints just lag and overshoot (bellies, antennae
+// tips, loose props).
+// Weight per joint: f@secondary_amount point attribute (0..1) if present.
+#include "aks_skeleton.h"
+
+int par[] = aks_parents(1);
+int order[] = aks_topo_order(par);
+int n = npoints(1);
+matrix W[] = aks_load_world(1);
+matrix W_old[] = W;
+int changed[];
+resize(changed, n);
+
+string pattern = chs("joints");
+int jiggle = chi("mode") == 1;
+float dt = max(@TimeInc, 1e-4);
+int sub = max(chi("substeps"), 1);
+float h = dt / sub;
+float k = chf("goal_stiffness");
+float damp = chf("damping");
+float drag = chf("air_drag");
+vector g = chv("gravity");
+float pin_root = chi("pin_chain_root");
+float amount = chf("amount");
+int first = !haspointattrib(0, "aks_simP");
+
+int sim[];
+resize(sim, n);
+foreach (int j; order)
+{
+    string nm = point(1, "name", j);
+    if (!aks_name_matches(nm, pattern)) continue;
+    int p = par[j];
+    // chain roots stay on the animation unless pin_chain_root is off
+    string pn = "";
+    if (p >= 0) pn = point(1, "name", p);
+    int is_chain_root = p < 0 || !aks_name_matches(pn, pattern);
+    if (is_chain_root && pin_root && !jiggle) continue;
+    sim[j] = 1;
+}
+
+vector P[];
+resize(P, n);
+for (int i = 0; i < n; i++)
+    P[i] = aks_pos(W[i]);
+
+foreach (int j; order)
+{
+    if (!sim[j]) continue;
+    vector goal = aks_pos(W[j]);
+    vector x = goal;
+    vector v = {0, 0, 0};
+    if (!first)
+    {
+        x = point(0, "aks_simP", j);
+        v = point(0, "aks_simV", j);
+    }
+    float w = amount;
+    if (haspointattrib(1, "secondary_amount"))
+    {
+        float sa = point(1, "secondary_amount", j);
+        w *= sa;
+    }
+    int p = par[j];
+    float rest_len = p >= 0 ? distance(aks_pos(W_old[j]), aks_pos(W_old[p])) : 0;
+    for (int s = 0; s < sub; s++)
+    {
+        vector a = (goal - x) * k - v * damp + g - v * length(v) * drag;
+        v += a * h;
+        x += v * h;
+        if (!jiggle && p >= 0)
+        {
+            vector anchor = P[p];
+            vector dvec = x - anchor;
+            if (length(dvec) > 1e-8)
+                x = anchor + normalize(dvec) * rest_len;
+        }
+    }
+    // blend with the animation by weight
+    vector outp = lerp(goal, x, w);
+    setpointattrib(0, "aks_simP", j, x);
+    setpointattrib(0, "aks_simV", j, v);
+    P[j] = outp;
+}
+
+// Apply: aim parents at their simulated children (chain mode), move sim joints.
+foreach (int j; order)
+{
+    if (!sim[j]) continue;
+    int p = par[j];
+    if (!jiggle && p >= 0)
+    {
+        vector old_dir = aks_pos(W_old[j]) - aks_pos(W_old[p]);
+        vector new_dir = P[j] - P[p];
+        W[p] = aks_set_pos(aks_aim_world(W_old[p], old_dir, new_dir), P[p]);
+        changed[p] = 1;
+    }
+}
+foreach (int j; order)
+{
+    if (!sim[j]) continue;
+    int p = par[j];
+    // keep the joint's animated local rotation relative to its (re-aimed) parent
+    if (p >= 0 && !jiggle && !changed[j])
+        W[j] = W_old[j] * invert(W_old[p]) * W[p];
+    W[j] = aks_set_pos(W[j], P[j]);
+    changed[j] = 1;
+}
+aks_propagate(par, order, changed, W_old, W);
+aks_commit(par, W);

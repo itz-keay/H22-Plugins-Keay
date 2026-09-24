@@ -1,0 +1,114 @@
+// ApexKinefxStudio - snake / worm / eel locomotion.            Run Over: Detail
+//
+// Input 0: snake rest skeleton (core/guides.snake): joints with s@chain="spine",
+//          i@chain_index and f@arclen (distance from the head).
+// Input 1: path curve (optional; +Z axis when empty).
+// Input 2: ground (heightfield or mesh, optional).
+//
+// Each spine joint samples the path at u = head_distance - arclen, so the
+// body follows the path the head already travelled (no sliding). Lateral
+// undulation is a *world-fixed* wave A*sin(2*pi*u/wavelength + phase_speed*t):
+// with phase_speed = 0 every joint follows the same sinuous track, which is
+// how real serpentine locomotion works. Roll/twist is a function of u too, so
+// it propagates head -> tail automatically. Joints are projected onto the
+// ground and aligned to its normal.
+#include "aks_skeleton.h"
+#include "aks_path.h"
+#include "aks_ground.h"
+
+aks_Path path = aks_path_load(1);
+int par[] = aks_parents(0);
+int order[] = aks_topo_order(par);
+int n = npoints(0);
+matrix W[];
+resize(W, n);
+int driven[];
+resize(driven, n);
+
+float t = @Time - chf("start_time");
+float head_d = chf("speed") * t + chf("distance_offset");
+float amp = chf("amplitude");
+float wl = max(chf("wavelength"), 1e-3);
+float phase_speed = chf("phase_speed");
+float ramp = max(chf("head_ramp"), 1e-4);
+float tail_taper = chf("tail_taper");
+float twist = radians(chf("twist"));
+float bank = chf("bank_gain");
+float lift = chf("head_lift");
+float lift_len = max(chf("head_lift_length"), 1e-4);
+float radius = chf("body_radius");
+float follow_ground = chf("ground_follow");
+float probe = chf("ray_probe");
+float h = max(chf("sample_step"), 1e-3);
+float body_len = 0;
+for (int i = 0; i < n; i++)
+{
+    float al = point(0, "arclen", i);
+    body_len = max(body_len, al);
+}
+
+// Pass 1: spine positions and up vectors.
+vector pos[];
+vector up[];
+resize(pos, n);
+resize(up, n);
+for (int i = 0; i < n; i++)
+{
+    string chain = point(0, "chain", i);
+    if (chain != "spine")
+        continue;
+    float s = point(0, "arclen", i);
+    float u = head_d - s;
+    vector c = aks_path_pos(path, u);
+    vector fwd = aks_path_tangent(path, u, h);
+    vector side = normalize(cross({0, 1, 0}, fwd));   // +X when fwd = +Z (left)
+    float env = smooth(0, ramp, s) * (1 - tail_taper * (body_len > 0 ? s / body_len : 0));
+    float wave = amp * env * sin(2 * AKS_PI * u / wl + phase_speed * t);
+    vector p = c + side * wave;
+
+    vector nrm;
+    float gh = aks_ground(2, p, probe, 0, nrm);
+    p.y = lerp(p.y, gh + radius, follow_ground);
+    p.y += lift * (1 - smooth(0, lift_len, s));
+    vector upv = normalize(lerp({0, 1, 0}, nrm, follow_ground));
+
+    float kappa = aks_path_curvature(path, u, h * 4);
+    float roll = twist * cos(2 * AKS_PI * u / wl + phase_speed * t) * env + bank * kappa;
+    upv = upv * aks_axis_angle(fwd, roll);
+    pos[i] = p;
+    up[i] = upv;
+    driven[i] = 1;
+}
+
+// Pass 2: orientation from neighbour positions (bone axis points to the head).
+for (int i = 0; i < n; i++)
+{
+    if (!driven[i])
+        continue;
+    vector fwd;
+    int p = par[i];
+    if (p >= 0 && driven[p])
+        fwd = pos[p] - pos[i];
+    else
+    {
+        float s = point(0, "arclen", i);
+        fwd = aks_path_tangent(path, head_d - s, h);
+    }
+    // rest frame: +Z toward the head, +Y up (template lies along -Z)
+    matrix3 r = aks_frame_delta({0, 0, 1}, {0, 1, 0}, fwd, up[i]);
+    W[i] = aks_compose(r, pos[i]);
+}
+
+// Root sits on the ground under the head; other joints (jaw...) follow rigidly.
+int root = aks_find(0, "root");
+int head = aks_find(0, "spine_000");
+if (root >= 0 && head >= 0)
+{
+    vector hp = pos[head];
+    hp.y = aks_ground_h(2, hp, probe, 0);
+    W[root] = aks_compose(aks_rot(W[head]), hp);
+    driven[root] = 1;
+}
+aks_follow_rest(0, par, order, driven, W);
+aks_commit(par, W);
+setdetailattrib(0, "head_distance", head_d);

@@ -1,0 +1,157 @@
+// ApexKinefxStudio - N-legged procedural walk (insects, spiders, crabs).
+//                                                               Run Over: Detail
+// Input 0: rest skeleton from core/guides.insect / quadruped (i@leg >= 0 on
+//          each leg's first joint; legs are 4-joint chains with chain_index
+//          0..3: coxa -> femur -> tibia -> tip, or upper -> lower -> ankle -> toe).
+// Input 1: path curve (optional; +Z when empty).
+// Input 2: ground (heightfield or mesh, optional).
+//
+// Feet are driven by distance travelled (see core/gait.py), so they never
+// slide and the result is scrubbable without a simulation. Each foot's
+// target is its rest "home" position carried along the path to the plant
+// distance, ray-cast onto the ground, and lifted during swing. Each leg is
+// solved with a yaw on the coxa and two-bone IK (knees up) on femur/tibia.
+#include "aks_skeleton.h"
+#include "aks_path.h"
+#include "aks_ground.h"
+#include "aks_ik.h"
+#include "aks_gait.h"
+
+// Body frame at an arbitrary distance along the path.
+function matrix body_frame(aks_Path path; float d; float h; float probe; float slope_align)
+{
+    vector c = aks_path_pos(path, d);
+    vector fwd = aks_path_tangent(path, d, h);
+    fwd.y = 0;
+    if (length(fwd) < 1e-6) fwd = {0, 0, 1};
+    vector nrm;
+    c.y = aks_ground(2, c, probe, 0, nrm);
+    vector up = normalize(lerp({0, 1, 0}, nrm, slope_align));
+    vector f = normalize(fwd - up * dot(fwd, up));
+    return aks_compose(maketransform(f, up), c);
+}
+
+
+aks_Path path = aks_path_load(1);
+int par[] = aks_parents(0);
+int order[] = aks_topo_order(par);
+int n = npoints(0);
+matrix W[];
+resize(W, n);
+int driven[];
+resize(driven, n);
+
+float t = @Time - chf("start_time");
+float dist = chf("speed") * t + chf("distance_offset");
+float stride = max(chf("stride"), 1e-3);
+int gait = chi("gait");
+float step_h = chf("step_height");
+float probe = chf("ray_probe");
+float h = max(chf("sample_step"), 1e-3);
+float slope_align = chf("slope_align");
+float bob = chf("body_bob");
+float duty_override = chf("duty_override");
+int pole_mode = chi("pole_mode");             // 0 insect (knees up/out), 1 quadruped (knees fore/aft)
+float front_sign = chf("front_knee_direction");
+float hind_sign = chf("hind_knee_direction");
+
+matrix root_w = body_frame(path, dist, h, probe, slope_align);
+vector up_w = set(0, 1, 0) * aks_rot(root_w);
+vector fwd_w = set(0, 0, 1) * aks_rot(root_w);
+
+// Pre-pass: count legs and their swing lift so the body can bob (dip while
+// legs are in the air) before the legs attach to it.
+int nlegs = 0;
+for (int i = 0; i < n; i++)
+{
+    int lg = point(0, "leg", i);
+    if (lg >= 0) nlegs++;
+}
+float lift_sum = 0;
+for (int i = 0; i < n; i++)
+{
+    int lg = point(0, "leg", i);
+    if (lg < 0) continue;
+    float dty;
+    float off = aks_gait_offset(gait, lg, nlegs, dty);
+    if (duty_override > 0) dty = duty_override;
+    float pd, lf;
+    int st;
+    aks_foot(dist, stride, off, dty, pd, lf, st);
+    lift_sum += lf;
+}
+if (nlegs > 0)
+    root_w = aks_set_pos(root_w, aks_pos(root_w) - up_w * (bob * lift_sum / nlegs));
+
+int root = aks_find(0, "root");
+if (root >= 0)
+{
+    W[root] = root_w;
+    driven[root] = 1;
+}
+// Body joints follow the root rigidly (computed now so legs can attach).
+aks_follow_rest(0, par, order, driven, W);
+
+for (int i = 0; i < n; i++)
+{
+    int leg = point(0, "leg", i);
+    if (leg < 0) continue;
+    string chain = point(0, "chain", i);
+    int jc = i;
+    int jf = aks_chain_joint(0, chain, 1);
+    int jt = aks_chain_joint(0, chain, 2);
+    int jp = aks_chain_joint(0, chain, 3);
+    if (jf < 0 || jt < 0 || jp < 0) continue;
+
+    vector rc = point(0, "P", jc);
+    vector rf = point(0, "P", jf);
+    vector rt = point(0, "P", jt);
+    vector rp = point(0, "P", jp);
+    float l1 = distance(rc, rf);
+    float l2 = distance(rf, rt);
+    float l3 = distance(rt, rp);
+
+    float duty;
+    float offset = aks_gait_offset(gait, leg, nlegs, duty);
+    if (duty_override > 0) duty = duty_override;
+    float plant_d, lift;
+    int stance;
+    aks_foot(dist, stride, offset, duty, plant_d, lift, stance);
+
+    // Foot home (rest tip on the ground plane) carried to the plant distance.
+    vector home = set(rp.x, 0, rp.z);
+    matrix pf = body_frame(path, plant_d, h, probe, slope_align);
+    vector target = home * pf;
+    vector gn;
+    target.y = aks_ground(2, target, probe, target.y, gn) + lift * step_h;
+
+    // Coxa: current world position, yaw toward the target in the body plane.
+    vector rparent = point(0, "P", par[jc]);
+    vector c = aks_pos(W[par[jc]]) + (rc - rparent) * aks_rot(W[par[jc]]);
+    matrix3 body_r = aks_rot(root_w);
+    vector v1 = rf - rc;                              // rest coxa bone, body local
+    vector tl = (target - c) * invert(body_r);        // target in body local
+    float yaw = atan2(tl.x, tl.z) - atan2(v1.x, v1.z);
+    vector v1n = v1 * aks_axis_angle({0, 1, 0}, yaw);
+    vector f = c + v1n * body_r;
+
+    // Femur / tibia two-bone IK with the knee bending up and outward.
+    vector outward = normalize(set(v1n.x, 0, v1n.z) + set(1e-6, 0, 0)) * body_r;
+    vector pole = f + up_w * (l2 + l3) + outward * l2;
+    if (pole_mode == 1)
+        pole = f + fwd_w * (l2 + l3) * (rc.z >= 0 ? front_sign : hind_sign);
+    vector knee, tip;
+    aks_two_bone_ik(f, l2, l3, target, pole, knee, tip);
+
+    matrix3 r_c = aks_bone_rot(rf - rc, {0, 1, 0}, f - c, up_w, {0, 0, 1}, fwd_w);
+    matrix3 r_f = aks_bone_rot(rt - rf, {0, 1, 0}, knee - f, up_w, {0, 0, 1}, fwd_w);
+    matrix3 r_t = aks_bone_rot(rp - rt, {0, 1, 0}, tip - knee, up_w, {0, 0, 1}, fwd_w);
+    W[jc] = aks_compose(r_c, c);
+    W[jf] = aks_compose(r_f, f);
+    W[jt] = aks_compose(r_t, knee);
+    W[jp] = aks_compose(r_t, tip);
+    driven[jc] = 1; driven[jf] = 1; driven[jt] = 1; driven[jp] = 1;
+}
+
+aks_commit(par, W);
+setdetailattrib(0, "distance", dist);

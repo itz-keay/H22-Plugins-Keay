@@ -1,0 +1,17 @@
+// ApexKinefxStudio - initialise KineFX transforms.           Run Over: Detail
+// Gives every joint an identity world rotation at its position and a matching
+// localtransform, so a point/polyline hierarchy becomes a valid KineFX
+// skeleton (3@transform is a proper matrix3 attribute).
+#include "aks_skeleton.h"
+
+int par[] = aks_parents(0);
+int n = npoints(0);
+matrix W[];
+resize(W, n);
+for (int i = 0; i < n; i++)
+{
+    matrix3 r = ident();
+    vector p = point(0, "P", i);
+    W[i] = aks_compose(r, p);
+}
+aks_commit(par, W);

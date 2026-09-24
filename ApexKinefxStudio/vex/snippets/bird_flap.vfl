@@ -1,0 +1,118 @@
+// ApexKinefxStudio - bird flight: path follow, banking, flapping with lag.
+//                                                               Run Over: Detail
+// Input 0: rest skeleton from core/guides.bird (chains wing_l / wing_r with
+//          chain_index 0..4, tail_feathers, leg_l / leg_r).
+// Input 1: flight path (optional; flies along +Z at `cruise_height`).
+//
+// Wings are FK chains. Segment k flaps by
+//     A * weight_k * sin(w*t - k*lag)            (automated follow-through)
+// and sweeps back by  drag * speed * weight_k  (velocity drag). `fold`
+// folds forearm/hand toward the body. `flap_amount` fades flapping to a
+// glide pose (dihedral) - animate it for take-off / glide cycles.
+// Flap frequency rises with climb rate, and the body banks into turns.
+#include "aks_skeleton.h"
+#include "aks_path.h"
+
+aks_Path path = aks_path_load(1);
+int par[] = aks_parents(0);
+int order[] = aks_topo_order(par);
+int n = npoints(0);
+matrix W[];
+resize(W, n);
+int driven[];
+resize(driven, n);
+
+float t = @Time - chf("start_time");
+float speed = chf("speed");
+float d = speed * t + chf("distance_offset");
+float h = max(chf("sample_step"), 1e-3);
+float freq = chf("flap_frequency");
+float amp = radians(chf("flap_amplitude"));
+float lag = radians(chf("segment_lag"));
+float amount = chf("flap_amount");
+float fold = chf("fold");
+float drag = radians(chf("drag_sweep"));
+float dihedral_a = radians(chf("glide_dihedral"));
+float bank_gain = chf("bank_gain");
+float max_bank = radians(chf("max_bank"));
+float cruise = chf("cruise_height");
+float tail_spread = radians(chf("tail_spread"));
+
+vector c = aks_path_pos(path, d);
+if (!path.valid) c.y += cruise;
+vector fwd = aks_path_tangent(path, d, h);
+float kappa = aks_path_curvature(path, d, h * 4);
+float climb = fwd.y;
+float bank = clamp(atan(speed * speed * kappa / 9.81) * bank_gain, -max_bank, max_bank);
+vector flat = normalize(set(fwd.x, 0, fwd.z) + set(0, 0, 1e-6));
+vector up = {0, 1, 0} * aks_axis_angle(fwd, -bank);   // lean into the turn
+matrix3 body_r = maketransform(normalize(fwd), up);
+// flap faster when climbing, slower when diving
+float w = 2 * AKS_PI * freq * (1 + 0.5 * climb);
+float bob = chf("body_bob") * amount * sin(w * t + AKS_PI * 0.5);
+
+int root = aks_find(0, "root");
+if (root >= 0)
+{
+    W[root] = aks_compose(body_r, c + up * bob);
+    driven[root] = 1;
+}
+aks_follow_rest(0, par, order, driven, W);
+matrix W_rest_follow[] = W;
+int changed[];
+resize(changed, n);
+
+// Wing weights per chain_index: shoulder, humerus, forearm, hand, tip
+float wgt[] = {0.3, 1.0, 0.6, 0.45, 0.0};
+foreach (string side; array("l", "r"))
+{
+    float s = side == "l" ? 1.0 : -1.0;
+    string chain = "wing_" + side;
+    for (int k = 0; k < 5; k++)
+    {
+        int j = aks_chain_joint(0, chain, k);
+        if (j < 0) continue;
+        int p = par[j];
+        // local rotation: flap about body forward (Z), sweep/fold about up (Y)
+        float flap = amount * amp * wgt[k] * sin(w * t - k * lag) + (1 - amount) * dihedral_a * (k == 1 ? 1 : 0);
+        float sweep = drag * speed * wgt[k] * 0.1 + fold * (k == 2 ? 1.4 : (k == 3 ? -2.2 : 0));
+        matrix3 lr = aks_axis_angle({0, 0, 1}, s * flap) * aks_axis_angle({0, 1, 0}, s * sweep);
+        vector rest_j = point(0, "P", j);
+        vector rest_p = point(0, "P", p);
+        vector off = rest_j - rest_p;          // rest orientation is identity
+        W[j] = aks_compose(lr * aks_rot(W[p]), aks_pos(W[p]) + off * aks_rot(W[p]));
+        changed[j] = 1;
+    }
+}
+
+// Tail feathers fan out when banking or braking; tail pitches with climb.
+int tail = aks_find(0, "tail");
+if (tail >= 0)
+{
+    int p = par[tail];
+    vector rt = point(0, "P", tail);
+    vector rp = point(0, "P", p);
+    matrix3 lr = aks_axis_angle({1, 0, 0}, -climb * 0.6) * aks_axis_angle({0, 0, 1}, bank * 0.5);
+    W[tail] = aks_compose(lr * aks_rot(W[p]), aks_pos(W[p]) + (rt - rp) * aks_rot(W[p]));
+    changed[tail] = 1;
+    int nf = 0;
+    for (int i = 0; i < n; i++)
+    {
+        string ch = point(0, "chain", i);
+        if (ch == "tail_feathers") nf++;
+    }
+    for (int i = 0; i < n; i++)
+    {
+        string ch = point(0, "chain", i);
+        if (ch != "tail_feathers") continue;
+        int ci = point(0, "chain_index", i);
+        vector rf = point(0, "P", i);
+        float spread = tail_spread * (abs(bank) / max(max_bank, 1e-3) + (1 - amount) * 0.5);
+        matrix3 fr = aks_axis_angle({0, 1, 0}, (ci - (nf - 1) * 0.5) * spread);
+        W[i] = aks_compose(fr * aks_rot(W[tail]), aks_pos(W[tail]) + (rf - rt) * aks_rot(W[tail]));
+        changed[i] = 1;
+    }
+}
+// anything parented under the wings / tail (props, extra feathers) follows
+aks_propagate(par, order, changed, W_rest_follow, W);
+aks_commit(par, W);

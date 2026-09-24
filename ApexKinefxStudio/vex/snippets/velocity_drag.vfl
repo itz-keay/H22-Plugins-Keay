@@ -1,0 +1,44 @@
+// ApexKinefxStudio - velocity drag (stateless lag).           Run Over: Detail
+//
+// Input 0: animated skeleton at the current frame.
+// Input 1: the same skeleton one frame earlier (Time Shift $F-1).
+// Joints matching `joints` rotate so their bone trails behind their motion,
+// proportional to speed: angle = drag * |v| (clamped). Good for feathers,
+// fins, antennae, ears, cloth-like props. Children follow.
+#include "aks_skeleton.h"
+
+int par[] = aks_parents(0);
+int order[] = aks_topo_order(par);
+int n = npoints(0);
+matrix W[] = aks_load_world(0);
+matrix W_old[] = W;
+int changed[];
+resize(changed, n);
+
+string pattern = chs("joints");
+float dt = max(@TimeInc, 1e-4);
+float gain = radians(chf("degrees_per_unit_speed"));
+float max_a = radians(chf("max_degrees"));
+
+foreach (int j; order)
+{
+    string nm = point(0, "name", j);
+    if (!aks_name_matches(nm, pattern)) continue;
+    int kids[] = {};
+    for (int i = 0; i < n; i++)
+        if (par[i] == j) append(kids, i);
+    if (len(kids) == 0) continue;
+    vector p0 = point(1, "P", j);
+    vector vel = (aks_pos(W_old[j]) - p0) / dt;
+    float spd = length(vel);
+    if (spd < 1e-6) continue;
+    vector bone = aks_pos(W_old[kids[0]]) - aks_pos(W_old[j]);
+    vector axis = cross(bone, -vel);
+    if (length(axis) < 1e-8) continue;
+    float a = min(gain * spd, max_a);
+    matrix3 d = aks_axis_angle(axis, a);
+    W[j] = aks_compose(aks_rot(W_old[j]) * d, aks_pos(W_old[j]));
+    changed[j] = 1;
+}
+aks_propagate(par, order, changed, W_old, W);
+aks_commit(par, W);

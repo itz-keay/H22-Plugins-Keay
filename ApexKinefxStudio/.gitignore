@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+backup/
+*.hip.bak
+examples/*.hip
+node_types_report.json

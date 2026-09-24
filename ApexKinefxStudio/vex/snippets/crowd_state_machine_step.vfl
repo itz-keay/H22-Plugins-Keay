@@ -1,0 +1,207 @@
+// ApexKinefxStudio - SOP-level crowd state machine.   SOP Solver step, Points
+//
+// Input 0: previous frame agents (one point per agent primitive).
+// Input 1: agents at the current frame (unused except as reference).
+// Input 2: trigger geometry: pieces with prim s@name ("panic", "hazard"...).
+//          Volumes (SDF, negative inside) or any geometry used as its
+//          bounding box.
+// Input 3: ground (heightfield or mesh, optional).
+//
+// The state machine arrays come from detail attributes written by
+// crowd.py (core/crowd_layout.StateMachine.to_detail):
+//   sm_state_names/clips/speeds/loop/ragdoll, sm_tr_src/dst/kind/arg/blend.
+// A transition fires on: volume:<name>, time:<frame>, random:<prob/sec>,
+// near:<radius> (another agent in the target state within radius), clip_end.
+// State clips may list variations separated by '|', picked per agent.
+// Agents walk along p@orient's +Z at the state speed with neighbour
+// avoidance, snap to the ground, and ragdoll states set i@ragdoll = 1 and
+// the "ragdoll" groups for hand-off to a ragdoll/crowd solver.
+#include "aks_ground.h"
+
+// ---- trigger volumes -----------------------------------------------------------------
+function int sm_inside(string tname; vector pos)
+{
+    int np = nprimitives(2);
+    for (int pr = 0; pr < np; pr++)
+    {
+        string nm = prim(2, "name", pr);
+        if (nm != tname) continue;
+        string ptype = primintrinsic(2, "typename", pr);
+        if (ptype == "Volume" || ptype == "VDB")
+        {
+            if (volumesample(2, pr, pos) < 0) return 1;
+            continue;
+        }
+        vector mn, mx;
+        getbbox(2, "@name=" + tname, mn, mx);
+        return pos.x >= mn.x && pos.x <= mx.x && pos.y >= mn.y - 1 && pos.y <= mx.y &&
+               pos.z >= mn.z && pos.z <= mx.z;
+    }
+    return 0;
+}
+
+
+int aprim = -1;
+int prs[] = pointprims(0, @ptnum);
+if (len(prs) > 0) aprim = prs[0];
+float dt = max(@TimeInc, 1e-4);
+float fps = 1.0 / dt;
+
+string names[] = detail(0, "sm_state_names");
+string clips[] = detail(0, "sm_state_clips");
+float speeds[] = detail(0, "sm_state_speeds");
+int loops[] = detail(0, "sm_state_loop");
+int rag[] = detail(0, "sm_state_ragdoll");
+int tr_src[] = detail(0, "sm_tr_src");
+int tr_dst[] = detail(0, "sm_tr_dst");
+string tr_kind[] = detail(0, "sm_tr_kind");
+string tr_arg[] = detail(0, "sm_tr_arg");
+float tr_blend[] = detail(0, "sm_tr_blend");
+int initial[] = detail(0, "sm_initial");
+if (len(names) == 0)
+    return;
+
+// ---- initialise ------------------------------------------------------------------
+if (!haspointattrib(0, "sm_state") || @Frame <= chf("start_frame"))
+{
+    i@sm_state = len(initial) > 0 ? initial[0] : 0;
+    f@sm_time = random(set(@ptnum, 11.3)) * 2.0;
+    i@sm_prev = -1;
+    f@sm_prev_time = 0;
+    f@sm_blend = 0;
+    f@sm_blend_len = 0;
+    f@speed_mult = fit01(random(set(@ptnum, 3.1)), 0.85, 1.15);
+    i@ragdoll = 0;
+}
+
+int st = i@sm_state;
+string var[] = split(clips[st], "|");
+string clip = var[int(random(set(@ptnum, st, 7.7)) * len(var)) % max(len(var), 1)];
+float clip_len = aprim >= 0 ? agentcliplength(0, aprim, clip) : 1.0;
+
+int fired = -1;
+for (int k = 0; k < len(tr_dst); k++)
+{
+    if (tr_src[k] >= 0 && tr_src[k] != st) continue;
+    if (tr_dst[k] == st) continue;
+    string kind = tr_kind[k];
+    string arg = tr_arg[k];
+    int fire = 0;
+    if (kind == "volume")
+        fire = sm_inside(arg, @P);
+    else if (kind == "time")
+        fire = @Frame >= atof(arg);
+    else if (kind == "random")
+        fire = random(set(@ptnum, @Frame, k, 5.5)) < atof(arg) * dt;
+    else if (kind == "clip_end")
+        fire = !loops[st] && f@sm_time >= clip_len;
+    else if (kind == "near")
+    {
+        int hits[] = pcfind(0, "P", @P, atof(arg), 16);
+        foreach (int hpt; hits)
+        {
+            if (hpt == @ptnum) continue;
+            int hs = point(0, "sm_state", hpt);
+            if (hs == tr_dst[k]) { fire = 1; break; }
+        }
+    }
+    if (fire) { fired = k; break; }
+}
+if (fired >= 0)
+{
+    i@sm_prev = st;
+    f@sm_prev_time = f@sm_time;
+    st = tr_dst[fired];
+    i@sm_state = st;
+    f@sm_time = 0;
+    f@sm_blend_len = tr_blend[fired];
+    var = split(clips[st], "|");
+    clip = var[int(random(set(@ptnum, st, 7.7)) * len(var)) % max(len(var), 1)];
+    clip_len = aprim >= 0 ? agentcliplength(0, aprim, clip) : 1.0;
+}
+else
+{
+    f@sm_time += dt;
+    f@sm_prev_time += dt;
+}
+
+// ---- clips -----------------------------------------------------------------------
+float ct = f@sm_time;
+if (loops[st] && clip_len > 0) ct -= floor(ct / clip_len) * clip_len;
+else ct = min(ct, clip_len);
+float w = f@sm_blend_len > 0 ? smooth(0, f@sm_blend_len, f@sm_time) : 1.0;
+if (aprim >= 0)
+{
+    if (i@sm_prev >= 0 && w < 1)
+    {
+        string pvar[] = split(clips[i@sm_prev], "|");
+        string pclip = pvar[int(random(set(@ptnum, i@sm_prev, 7.7)) * len(pvar)) % max(len(pvar), 1)];
+        float plen = max(agentcliplength(0, aprim, pclip), 1e-3);
+        float pt = f@sm_prev_time - floor(f@sm_prev_time / plen) * plen;
+        setagentclipnames(0, aprim, array(pclip, clip));
+        setagentcliptimes(0, aprim, array(pt, ct));
+        setagentclipweights(0, aprim, array(1 - w, w));
+    }
+    else
+    {
+        setagentclipnames(0, aprim, array(clip));
+        setagentcliptimes(0, aprim, array(ct));
+        setagentclipweights(0, aprim, array(1.0));
+    }
+}
+
+// ---- ragdoll hand-off ---------------------------------------------------------------
+if (rag[st])
+{
+    i@ragdoll = 1;
+    setpointgroup(0, "ragdoll", @ptnum, 1);
+    if (aprim >= 0) setprimgroup(0, "ragdoll", aprim, 1);
+    return;   // ragdolls stop locomotion; a physics solver takes over
+}
+
+// ---- locomotion + avoidance -----------------------------------------------------------
+vector4 q = p@orient;
+if (!haspointattrib(0, "orient")) q = quaternion({0, 0, 0});
+vector fwd = qrotate(q, {0, 0, 1});
+fwd.y = 0;
+fwd = length(fwd) > 1e-6 ? normalize(fwd) : set(0, 0, 1);
+
+vector goal = chv("goal");
+vector desired = fwd;
+if (chi("use_goal"))
+{
+    vector to_goal = goal - @P;
+    to_goal.y = 0;
+    if (length(to_goal) > 1e-3) desired = normalize(to_goal);
+}
+float radius = chf("avoid_radius");
+vector push = {0, 0, 0};
+int nb[] = pcfind(0, "P", @P, radius, chi("avoid_neighbours") + 1);
+foreach (int o; nb)
+{
+    if (o == @ptnum) continue;
+    vector op = point(0, "P", o);
+    vector d = @P - op;
+    d.y = 0;
+    float l = length(d);
+    if (l > 1e-5) push += d / (l * l);
+}
+desired = normalize(desired + push * chf("avoid_strength") * radius);
+float max_turn = radians(chf("turn_rate")) * dt;
+float ang = atan2(cross(fwd, desired).y, dot(fwd, desired));
+ang = clamp(ang, -max_turn, max_turn);
+matrix3 ry = ident();
+rotate(ry, ang, {0, 1, 0});
+vector nfwd = normalize(fwd * ry);
+
+float spd = speeds[st] * f@speed_mult;
+vector np = @P + nfwd * spd * dt;
+if (chi("snap_to_ground"))
+    np.y = aks_ground_h(3, np, 50, np.y);
+@P = np;
+matrix3 facing = maketransform(nfwd, {0, 1, 0});
+p@orient = quaternion(facing);
+// agents render from their primitive transform, not the point orient
+if (aprim >= 0)
+    setprimintrinsic(0, "transform", aprim, facing);
+v@v = nfwd * spd;
