@@ -11,6 +11,7 @@ characters.
 | `rigging.creatures` | Snake/worm, insect, spider, quadruped, bird, jellyfish, each with procedural motion |
 | `rigging.vehicles` | Car / truck / bike / tank following a curve over a heightfield or mesh: rolling wheels, suspension, steering, body roll/pitch, drift, vibration, tank treads |
 | `dynamics` | Spring chains, jiggle, vibration, velocity drag for any skeleton |
+| `mcp/` + `bridge`, `selftest` | Houdini MCP server so Claude can build, cook and debug every tool in your Houdini ([setup](mcp/README.md)) |
 | `crowd` | Agents from characters, stateless stadium crowds, SOP state-machine crowds with trigger volumes and ragdoll hand-off, stock DOP crowd networks |
 
 > **Status: first implementation, not yet run inside Houdini.** The Python and

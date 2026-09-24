@@ -16,6 +16,7 @@
     <memberTool name="aks_stadium"/>
     <memberTool name="aks_crowd"/>
     <memberTool name="aks_validate"/>
+    <memberTool name="aks_mcp_bridge"/>
   </toolshelf>
 
   <tool name="aks_retarget" label="Retarget FBX" icon="KINEFX_retarget">
@@ -136,6 +137,15 @@ crowd.build_crowd(agent)
     <script scriptType="python"><![CDATA[
 import apex_studio.validate as v
 v.report(verbose=True)
+]]></script>
+  </tool>
+
+  <tool name="aks_mcp_bridge" label="Start MCP Bridge" icon="NETWORKS_chop">
+    <script scriptType="python"><![CDATA[
+import hou
+import apex_studio.bridge as b
+port = b.start()
+hou.ui.displayMessage(f"ApexKinefxStudio MCP bridge listening on 127.0.0.1:{port}")
 ]]></script>
   </tool>
 </shelfDocument>

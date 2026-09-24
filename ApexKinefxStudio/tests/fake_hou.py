@@ -352,6 +352,9 @@ class Geometry:
     def pointStringAttribValues(self, name):
         return list(self._names)
 
+    def pointFloatAttribValues(self, name):
+        return []
+
 
 class Node:
     def __init__(self, parent, type_name, name, category):
@@ -521,6 +524,18 @@ class Node:
     def cook(self, force=False):
         pass
 
+    def errors(self):
+        return ()
+
+    def warnings(self):
+        return ()
+
+    def isDisplayFlagSet(self):
+        return self.display
+
+    def parms(self):
+        return list(self._parms.values())
+
     def createDigitalAsset(self, name, hda_file_name, description, min_num_inputs=0, max_num_inputs=0):
         self._type = NodeType(name, OBJ)
         return self
@@ -585,3 +600,20 @@ def setFrame(f):
 
 
 data = types.SimpleNamespace()  # no recipe API in the fake
+
+
+class hipFile:
+    _path = "untitled.hip"
+
+    @staticmethod
+    def path():
+        return hipFile._path
+
+    @staticmethod
+    def save(path=None):
+        if path:
+            hipFile._path = path
+
+
+def isUIAvailable():
+    return False

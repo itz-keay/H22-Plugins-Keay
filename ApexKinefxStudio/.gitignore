@@ -4,3 +4,6 @@ backup/
 *.hip.bak
 examples/*.hip
 node_types_report.json
+mcp/hython_bridge.log
+aks_selftest_report.json
+aks_selftest.hip
