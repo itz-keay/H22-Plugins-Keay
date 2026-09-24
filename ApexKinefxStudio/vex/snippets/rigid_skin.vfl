@@ -1,0 +1,18 @@
+// ApexKinefxStudio - rigid skinning.                         Run Over: Points
+//
+// Input 0: model with s@aks_joint (see rigid_bind.vfl).
+// Input 1: rest skeleton.   Input 2: animated skeleton.
+// Every point moves with its joint: P' = P * inverse(rest) * anim.
+#include "aks_skeleton.h"
+
+int jr = findattribval(1, "point", "name", s@aks_joint);
+int ja = findattribval(2, "point", "name", s@aks_joint);
+if (jr < 0 || ja < 0)
+    return;
+matrix m = invert(aks_world(1, jr)) * aks_world(2, ja);
+@P *= m;
+if (haspointattrib(0, "N"))
+{
+    vector nn = point(0, "N", @ptnum);
+    setpointattrib(0, "N", @ptnum, normalize(nn * matrix3(m)));
+}

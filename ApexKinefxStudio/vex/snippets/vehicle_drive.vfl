@@ -1,0 +1,218 @@
+// ApexKinefxStudio - kinematic vehicle driver.                Run Over: Detail
+//
+// Input 0: rest vehicle skeleton (core/guides.vehicle): root, body, and per
+//          wheel susp_<w> > steer_<w> > wheel_<w> with f@radius, i@steers,
+//          i@drives, s@role. The vehicle faces +Z with its left side on +X and
+//          sits on y = 0 in rest.
+// Input 1: path curve (optional; +Z axis when empty).
+// Input 2: ground: heightfield or mesh (optional; y = 0 plane when empty).
+//
+// Per frame (all closed form, scrubbable):
+//  * distance s(t): constant speed, or a keyable "distance" channel
+//  * speed / accelerations by finite differences of s(t)
+//  * yaw = path heading + drift slip angle (slip grows once v^2*k > grip)
+//  * each wheel is ray-cast onto the ground; a least-squares plane through
+//    the contacts gives chassis height / pitch / roll (bikes lean instead)
+//  * steering: Ackermann for cars, atan(L*k) for bikes, none for tanks,
+//    minus counter-steer while drifting
+//  * wheel spin = distance travelled BY THAT WHEEL / radius, where an offset
+//    wheel travels s - offset * (heading change); inner wheels spin slower
+//  * suspension offset per wheel = ground gap, clamped to the travel
+//  * the body joint gets static squat/dive and roll from the accelerations
+// Secondary wobble, vibration and drift wheel-spin are added downstream by
+// vehicle_dynamics_step.vfl (a SOP Solver).
+#include "aks_skeleton.h"
+#include "aks_path.h"
+#include "aks_ground.h"
+#include "aks_vehicle.h"
+
+function float vd_distance(int mode; float tt; float speed; float start; float offset)
+{
+    if (mode == 1)
+        return chf("distance", tt) + offset;
+    return speed * (tt - start) + offset;
+}
+
+aks_Path path = aks_path_load(1);
+int par[] = aks_parents(0);
+int order[] = aks_topo_order(par);
+int n = npoints(0);
+matrix W[];
+resize(W, n);
+int driven[];
+resize(driven, n);
+
+int mode = chi("distance_mode");
+int vtype = chi("vehicle_type");          // 0 car/truck, 1 bike, 2 tank
+float speed_p = chf("speed");
+float start = chf("start_time");
+float offset = chf("distance_offset");
+float dt = max(@TimeInc, 1e-4);
+float h = max(chf("sample_step"), 1e-3);
+float window = max(chf("curvature_window"), h);
+float lookahead = chf("steer_lookahead");
+float probe = chf("ray_probe");
+
+float s = vd_distance(mode, @Time, speed_p, start, offset);
+float s_prev = vd_distance(mode, @Time - dt, speed_p, start, offset);
+float s_next = vd_distance(mode, @Time + dt, speed_p, start, offset);
+float v = (s_next - s_prev) / (2 * dt);
+float a_long = (s_next - 2 * s + s_prev) / (dt * dt);
+float dir_sign = v < 0 ? -1.0 : 1.0;
+
+vector c = aks_path_pos(path, s);
+vector tng = aks_path_tangent(path, s, h);
+float heading = atan2(tng.x, tng.z);
+float kappa = aks_path_curvature(path, s, window);
+float kappa_look = aks_path_curvature(path, s + dir_sign * lookahead, window);
+float a_lat = v * v * kappa;
+
+// ---- drift -----------------------------------------------------------------
+float slip = aks_drift_slip(a_lat, chf("grip"), chf("drift_gain"),
+                            radians(chf("max_drift")), chf("drift_amount"));
+if (vtype == 1) slip *= 0.25;             // bikes barely slide
+float yaw = heading + slip;
+matrix3 r_yaw = aks_body_rotation(yaw, 0, 0);
+
+// ---- rest measurements -------------------------------------------------------
+int wheels[];
+float xs[];
+float zs[];
+float hs[];
+float min_z = 1e9, max_z = -1e9, min_x = 1e9, max_x = -1e9;
+for (int i = 0; i < n; i++)
+{
+    string role = point(0, "role", i);
+    if (role != "wheel") continue;
+    append(wheels, i);
+    vector rp = point(0, "P", i);
+    min_z = min(min_z, rp.z); max_z = max(max_z, rp.z);
+    min_x = min(min_x, rp.x); max_x = max(max_x, rp.x);
+}
+float wheelbase = chf("wheelbase") > 0 ? chf("wheelbase") : max(max_z - min_z, 1e-3);
+float track = chf("track_width") > 0 ? chf("track_width") : max(max_x - min_x, 0.0);
+
+// ---- ground contacts -> chassis plane -----------------------------------------------
+float contact_h[];
+resize(contact_h, n);
+foreach (int wi; wheels)
+{
+    vector rp = point(0, "P", wi);
+    vector wp = set(rp.x, 0, rp.z) * r_yaw + set(c.x, 0, c.z);
+    wp.y = c.y;
+    float gh = aks_ground_h(2, wp, probe, 0);
+    contact_h[wi] = gh;
+    append(xs, rp.x);
+    append(zs, rp.z);
+    append(hs, gh);
+}
+float plane_h, pitch, roll;
+aks_fit_plane(xs, zs, hs, plane_h, pitch, roll);
+if (len(wheels) == 0)
+    plane_h = aks_ground_h(2, c, probe, 0);
+
+float roughness = 0;
+for (int k = 0; k < len(hs); k++)
+    roughness += abs(hs[k] - (plane_h + tan(roll) * xs[k] + tan(pitch) * zs[k]));
+roughness = len(hs) > 0 ? roughness / len(hs) : 0;
+
+float lean = 0;
+if (vtype == 1)
+{
+    lean = clamp(atan(v * v * kappa / 9.81) * chf("lean_gain"),
+                 -radians(chf("max_lean")), radians(chf("max_lean")));
+    roll = -lean;                         // lean into the turn
+}
+matrix3 r_root = aks_body_rotation(yaw, pitch, roll);
+vector p_root = set(c.x, plane_h + chf("ride_height_offset"), c.z);
+vector up = {0, 1, 0} * r_root;
+
+int root = aks_find(0, "root");
+if (root >= 0)
+{
+    W[root] = aks_compose(r_root, p_root);
+    driven[root] = 1;
+}
+
+// ---- body: static squat/dive + roll ---------------------------------------------------
+float body_pitch = clamp(a_long / max(chf("pitch_stiffness"), 1e-3),
+                         -radians(chf("max_pitch")), radians(chf("max_pitch")));
+float body_roll = vtype == 1 ? 0.0 : clamp(a_lat / max(chf("roll_stiffness"), 1e-3),
+                         -radians(chf("max_roll")), radians(chf("max_roll")));
+int body = aks_find(0, "body");
+if (body >= 0)
+{
+    vector rb = point(0, "P", body);
+    matrix3 r_local = aks_body_rotation(0, body_pitch, body_roll);
+    W[body] = aks_compose(r_local * r_root, rb * r_root + p_root);
+    driven[body] = 1;
+}
+
+// ---- wheels ---------------------------------------------------------------------------
+float max_steer = radians(chf("max_steer"));
+float countersteer = chf("countersteer");
+foreach (int wi; wheels)
+{
+    string part = point(0, "part", wi);
+    int steers = point(0, "steers", wi);
+    float radius = point(0, "radius", wi);
+    vector rp = point(0, "P", wi);
+    float side = rp.x >= 0 ? 1.0 : -1.0;
+
+    // suspension: close the gap between the rigid wheel centre and the ground
+    vector rigid = rp * r_root + p_root;
+    float gap = (contact_h[wi] + radius) - rigid.y;
+    float travel = chf("suspension_travel");
+    float susp = clamp(gap / max(up.y, 1e-3), -travel, travel);
+    vector centre = rigid + up * susp;
+
+    // steering
+    float steer = 0;
+    if (steers)
+    {
+        if (vtype == 0)
+            steer = chi("ackermann") ? aks_ackermann(wheelbase, track, kappa_look, side)
+                                     : atan(wheelbase * kappa_look);
+        else if (vtype == 1)
+            steer = atan(wheelbase * kappa_look) * cos(lean);
+        steer -= countersteer * slip;
+        steer = clamp(steer, -max_steer, max_steer);
+    }
+
+    // spin from the distance this wheel actually travelled
+    float s_wheel = aks_path_offset_distance(path, s, rp.x);
+    float spin = aks_wheel_spin(s_wheel, radius);
+
+    matrix3 r_steer = aks_axis_angle({0, 1, 0}, steer) * r_root;
+    matrix3 r_wheel = aks_axis_angle({1, 0, 0}, spin) * r_steer;
+
+    int js = aks_find(0, "susp_" + part);
+    int jt = aks_find(0, "steer_" + part);
+    if (js >= 0) { W[js] = aks_compose(r_root, centre); driven[js] = 1; }
+    if (jt >= 0) { W[jt] = aks_compose(r_steer, centre); driven[jt] = 1; }
+    W[wi] = aks_compose(r_wheel, centre);
+    driven[wi] = 1;
+
+    setpointattrib(0, "spin_base", wi, spin);
+    setpointattrib(0, "spin_rate", wi, v / max(radius, 1e-4));
+    setpointattrib(0, "steer", wi, steer);
+    setpointattrib(0, "susp_offset", wi, susp);
+    setpointattrib(0, "contact_h", wi, contact_h[wi]);
+    setpointattrib(0, "skid", wi, abs(slip) > radians(2) && !steers ? abs(slip) : 0.0);
+}
+
+aks_follow_rest(0, par, order, driven, W);
+aks_commit(par, W);
+
+setdetailattrib(0, "distance", s);
+setdetailattrib(0, "speed", v);
+setdetailattrib(0, "a_long", a_long);
+setdetailattrib(0, "a_lat", a_lat);
+setdetailattrib(0, "kappa", kappa);
+setdetailattrib(0, "slip", slip);
+setdetailattrib(0, "yaw", yaw);
+setdetailattrib(0, "roughness", roughness);
+setdetailattrib(0, "body_pitch", body_pitch);
+setdetailattrib(0, "body_roll", body_roll);
+setdetailattrib(0, "track_offset_l", aks_path_offset_distance(path, s, track * 0.5));
+setdetailattrib(0, "track_offset_r", aks_path_offset_distance(path, s, -track * 0.5));

@@ -1,0 +1,138 @@
+// ApexKinefxStudio - jellyfish / octopus pulse swimming.       Run Over: Detail
+//
+// Input 0: rest skeleton from core/guides.jellyfish (spoke_* chains form the
+//          bell, tentacle_* chains hang from the rim; f@angle per chain).
+//
+// Pulse: contraction c(t) rises quickly (contract_ratio of the cycle) and
+// relaxes slowly. The body moves `thrust` per pulse, only while contracting,
+// plus a constant `drift`, all closed form (no simulation):
+//     travel(t) = thrust * (floor(u) + smooth(0, 1, min(frac(u)/ratio, 1))) + drift*t
+// Tentacles use follow-the-leader lag: joint k samples the bell trajectory at
+// t - k*lag, then segment lengths are restored along the chain, so they trail,
+// stretch on each thrust and settle while coasting. `curl` adds a travelling
+// sine sway that grows toward the tips.
+#include "aks_skeleton.h"
+
+function float jf_contract(float t; float freq; float ratio)
+{
+    float u = max(t, 0) * freq;
+    float ph = u - floor(u);
+    if (ph < ratio)
+        return sin(0.5 * AKS_PI * ph / ratio);
+    return cos(0.5 * AKS_PI * (ph - ratio) / (1 - ratio));
+}
+
+function float jf_travel(float t; float freq; float ratio; float thrust; float drift)
+{
+    float u = max(t, 0) * freq;
+    float ph = u - floor(u);
+    return thrust * (floor(u) + smooth(0, 1, min(ph / ratio, 1))) + drift * max(t, 0);
+}
+
+
+int par[] = aks_parents(0);
+int order[] = aks_topo_order(par);
+int n = npoints(0);
+matrix W[];
+resize(W, n);
+int driven[];
+resize(driven, n);
+
+float freq = chf("pulse_frequency");
+float ratio = clamp(chf("contract_ratio"), 0.05, 0.95);
+float squeeze = chf("bell_squeeze");
+float thrust = chf("thrust");
+float drift = chf("drift");
+float lag = chf("tentacle_lag");
+float curl = chf("curl");
+float curl_freq = chf("curl_frequency");
+vector dir = normalize(chv("swim_direction"));
+float t0 = chf("start_time");
+
+float t = @Time - t0;
+float c = jf_contract(t, freq, ratio);
+vector origin = dir * jf_travel(t, freq, ratio, thrust, drift);
+// orient the body so +Y (bell apex) points along the swim direction
+matrix3 body_r = dihedral({0, 1, 0}, dir);
+
+int root = aks_find(0, "root");
+if (root >= 0)
+{
+    W[root] = aks_compose(body_r, origin);
+    driven[root] = 1;
+}
+aks_follow_rest(0, par, order, driven, W);
+
+// Bell: pull spoke joints inward and slightly up while contracting.
+for (int i = 0; i < n; i++)
+{
+    string chain = point(0, "chain", i);
+    if (!match("spoke_*", chain)) continue;
+    vector rp = point(0, "P", i);
+    float r = length(set(rp.x, 0, rp.z));
+    float k = 1 - squeeze * c * smooth(0, 1, r / max(chf("bell_radius"), 1e-3));
+    vector local = set(rp.x * k, rp.y + (1 - k) * r * 0.35, rp.z * k);
+    int p = par[i];
+    vector lp = local;
+    vector rest_parent = point(0, "P", p);
+    vector dirn = local - rest_parent;
+    matrix3 rr = dihedral(normalize(rp - rest_parent + {1e-6, 0, 0}), normalize(dirn + {1e-6, 0, 0}));
+    W[i] = aks_compose(rr * body_r, lp * body_r + origin);
+    driven[i] = 1;
+}
+
+// Tentacles: lagged samples + length restore.
+for (int i = 0; i < n; i++)
+{
+    string chain = point(0, "chain", i);
+    int ci = point(0, "chain_index", i);
+    if (!match("tentacle_*", chain) || ci != 0) continue;
+    float ang = point(0, "angle", i);
+    int joints[];
+    int k = 0;
+    while (1)
+    {
+        int j = aks_chain_joint(0, chain, k);
+        if (j < 0) break;
+        append(joints, j);
+        k++;
+    }
+    int m = len(joints);
+    vector pts[];
+    resize(pts, m);
+    for (int q = 0; q < m; q++)
+    {
+        vector rp = point(0, "P", joints[q]);
+        float tq = t - q * lag;
+        float cq = jf_contract(tq, freq, ratio);
+        vector oq = dir * jf_travel(tq, freq, ratio, thrust, drift);
+        // rim anchor pulled in by the contraction at the lagged time
+        vector anchor = set(rp.x * (1 - squeeze * cq * 0.8), 0, rp.z * (1 - squeeze * cq * 0.8));
+        vector local = set(anchor.x, rp.y, anchor.z);
+        float sway = curl * (q / float(max(m - 1, 1))) * sin(2 * AKS_PI * curl_freq * t - q * 0.45 + ang);
+        local += set(cos(ang + AKS_PI * 0.5), 0, sin(ang + AKS_PI * 0.5)) * sway;
+        pts[q] = local * body_r + oq;
+    }
+    // restore rest segment lengths from the root out
+    for (int q = 1; q < m; q++)
+    {
+        vector a = point(0, "P", joints[q - 1]);
+        vector b = point(0, "P", joints[q]);
+        float seg = distance(a, b);
+        vector dv = pts[q] - pts[q - 1];
+        if (length(dv) < 1e-8) dv = -dir;
+        pts[q] = pts[q - 1] + normalize(dv) * seg;
+    }
+    for (int q = 0; q < m; q++)
+    {
+        int j = joints[q];
+        vector rest_dir = {0, -1, 0};
+        vector cur_dir = q < m - 1 ? pts[q + 1] - pts[q] : pts[q] - pts[max(q - 1, 0)];
+        if (length(cur_dir) < 1e-8) cur_dir = -dir;
+        matrix3 rr = dihedral(rest_dir, normalize(cur_dir));
+        W[j] = aks_compose(rr, pts[q]);
+        driven[j] = 1;
+    }
+}
+aks_commit(par, W);
+setdetailattrib(0, "contraction", c);

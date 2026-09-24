@@ -1,0 +1,44 @@
+// ApexKinefxStudio - procedural vibration.                    Run Over: Detail
+//
+// Input 0: animated skeleton.
+// Adds band-limited noise to the rotation and position of joints matching
+// `joints`. Amplitude = base + speed_gain * |speed|, where speed comes from
+// the detail attribute named by `speed_attrib` (vehicle_drive writes
+// "speed") or 0. Children follow their parents.
+#include "aks_skeleton.h"
+
+int par[] = aks_parents(0);
+int order[] = aks_topo_order(par);
+int n = npoints(0);
+matrix W[] = aks_load_world(0);
+matrix W_old[] = W;
+int changed[];
+resize(changed, n);
+
+string pattern = chs("joints");
+float t = @Time;
+float f = chf("frequency");
+float speed = 0;
+string sattr = chs("speed_attrib");
+if (sattr != "" && hasdetailattrib(0, sattr))
+    speed = detail(0, sattr);
+float amp = chf("amplitude") + chf("speed_gain") * abs(speed);
+float rot_amp = radians(chf("rotation_degrees")) * amp;
+float pos_amp = chf("translation") * amp;
+
+for (int j = 0; j < n; j++)
+{
+    string nm = point(0, "name", j);
+    if (!aks_name_matches(nm, pattern)) continue;
+    float seed = random(j + 13) * 100;
+    vector rot = set(noise(set(t * f, seed, 1.1)), noise(set(t * f, seed, 2.3)), noise(set(t * f, seed, 3.7))) - 0.5;
+    vector pos = set(noise(set(t * f, seed, 4.1)), noise(set(t * f, seed, 5.9)), noise(set(t * f, seed, 6.2))) - 0.5;
+    matrix3 r = aks_rot(W[j]);
+    matrix3 d = aks_axis_angle({1, 0, 0}, rot.x * 2 * rot_amp)
+              * aks_axis_angle({0, 1, 0}, rot.y * 2 * rot_amp)
+              * aks_axis_angle({0, 0, 1}, rot.z * 2 * rot_amp);
+    W[j] = aks_compose(d * r, aks_pos(W[j]) + pos * 2 * pos_amp);
+    changed[j] = 1;
+}
+aks_propagate(par, order, changed, W_old, W);
+aks_commit(par, W);

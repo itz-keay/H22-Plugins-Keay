@@ -1,0 +1,10 @@
+{
+    "_comment": "Copy this file into $HOUDINI_USER_PREF_DIR/packages/ and set APEX_KINEFX_STUDIO to the folder that contains it.",
+    "enable": "houdini_version >= '20.5'",
+    "load_package_once": true,
+    "env": [
+        { "APEX_KINEFX_STUDIO": "$HOME/houdini_packages/ApexKinefxStudio" },
+        { "APEX_KINEFX_STUDIO_LOGLEVEL": "INFO" }
+    ],
+    "hpath": "$APEX_KINEFX_STUDIO"
+}

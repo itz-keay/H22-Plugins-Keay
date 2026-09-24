@@ -1,0 +1,90 @@
+// ApexKinefxStudio - world-delta FK retarget.                  Run Over: Detail
+//
+// Input 0: target skeleton in its rest pose. Each point may carry
+//          s@retarget_src = name of the source joint that drives it.
+// Input 1: source skeleton, animated (current frame).
+// Input 2: source skeleton rest pose, ALREADY MATCHED to the target's rest
+//          pose (T/A pose) with Rig Match Pose.
+//
+// For a mapped joint:   R_tgt = R_tgt_rest * inverse(R_src_rest) * R_src_anim
+// i.e. the target bone turns by exactly the world-space rotation the source
+// bone turned away from the matched rest pose. Unmapped joints keep their rest
+// rotation relative to their parent. Positions come from FK with the target's
+// own bone lengths, so proportions never stretch. The hips translate by the
+// source hips delta scaled by the leg-length ratio.
+#include "aks_skeleton.h"
+
+int par[] = aks_parents(0);
+int order[] = aks_topo_order(par);
+int n = npoints(0);
+matrix W[];
+resize(W, n);
+
+string hips_t = chs("hips_joint");
+int th = aks_find(0, hips_t);
+string hips_s = "";
+if (th >= 0)
+    hips_s = point(0, "retarget_src", th);
+int sh_rest = hips_s != "" ? aks_find(2, hips_s) : -1;
+int sh_anim = hips_s != "" ? aks_find(1, hips_s) : -1;
+
+float tscale = chf("translation_scale");
+if (chi("auto_scale") && th >= 0 && sh_rest >= 0)
+{
+    vector pt = point(0, "P", th);
+    vector ps = point(2, "P", sh_rest);
+    if (abs(ps.y) > 1e-6)
+        tscale *= pt.y / ps.y;
+}
+int root_mode = chi("root_motion");   // 0 keep, 1 in place (XZ locked), 2 no translation
+
+foreach (int j; order)
+{
+    matrix rest = aks_world(0, j);
+    matrix3 rest_r = aks_rot(rest);
+    int p = par[j];
+    string src = point(0, "retarget_src", j);
+    int sr = src != "" ? aks_find(2, src) : -1;
+    int sa = src != "" ? aks_find(1, src) : -1;
+
+    matrix3 rot;
+    if (sr >= 0 && sa >= 0)
+    {
+        matrix3 r_src_rest = point(2, "transform", sr);
+        matrix3 r_src_anim = point(1, "transform", sa);
+        rot = rest_r * invert(r_src_rest) * r_src_anim;
+    }
+    else if (p >= 0)
+    {
+        matrix3 rest_pr = aks_rot(aks_world(0, p));
+        rot = rest_r * invert(rest_pr) * aks_rot(W[p]);
+    }
+    else
+    {
+        rot = rest_r;
+    }
+
+    vector pos = aks_pos(rest);
+    if (p >= 0)
+    {
+        matrix rest_p = aks_world(0, p);
+        vector off = (aks_pos(rest) - aks_pos(rest_p)) * invert(aks_rot(rest_p));
+        pos = aks_pos(W[p]) + off * aks_rot(W[p]);
+    }
+    if (j == th && sh_rest >= 0 && sh_anim >= 0 && root_mode != 2)
+    {
+        vector ps_rest = point(2, "P", sh_rest);
+        vector ps_anim = point(1, "P", sh_anim);
+        vector delta = (ps_anim - ps_rest) * tscale;
+        if (root_mode == 1)
+        {
+            delta.x = 0;
+            delta.z = 0;
+        }
+        pos = aks_pos(rest) + delta;
+        if (p >= 0)
+            pos = aks_pos(W[p]) + (pos - aks_pos(aks_world(0, p)));
+    }
+    W[j] = aks_compose(rot, pos);
+}
+aks_commit(par, W);

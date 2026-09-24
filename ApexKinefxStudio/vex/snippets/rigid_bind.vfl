@@ -1,0 +1,28 @@
+// ApexKinefxStudio - bind rigid pieces to joints.            Run Over: Points
+//
+// Input 0: model (unpacked), pieces identified by a primitive string
+//          attribute (default "name").
+// Input 1: rest skeleton.
+// Writes s@aks_joint: "wheel_<piece>", "part_<piece>" or "<piece>" when such a
+// joint exists, else the default joint (usually "body").
+string attr = chs("piece_attrib");
+string piece = "";
+int prs[] = pointprims(0, @ptnum);
+if (len(prs) > 0 && hasprimattrib(0, attr))
+    piece = prim(0, attr, prs[0]);
+else if (haspointattrib(0, attr))
+    piece = point(0, attr, @ptnum);
+// strip path-style names produced by FBX/Alembic imports: /car/wheel_fl -> wheel_fl
+string parts[] = split(piece, "/");
+if (len(parts) > 0) piece = parts[-1];
+
+s@aks_joint = chs("default_joint");
+string cands[] = array("wheel_" + piece, "part_" + piece, piece);
+foreach (string c; cands)
+{
+    if (piece != "" && findattribval(1, "point", "name", c) >= 0)
+    {
+        s@aks_joint = c;
+        break;
+    }
+}
