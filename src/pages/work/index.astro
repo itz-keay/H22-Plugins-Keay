@@ -1,0 +1,50 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import WorkCard from '../../components/WorkCard.astro';
+
+const work = (await getCollection('work', ({ data }) => !data.draft)).sort((a, b) => a.data.order - b.data.order || b.data.year - a.data.year);
+const categories = [...new Set(work.map((w) => w.data.category))];
+---
+<Base title="Work" description="Selected branding, UI/UX, motion and print projects.">
+  <section class="page-hero container">
+    <p class="eyebrow">{work.length} projects</p>
+    <h1>Work<span class="accent">.</span></h1>
+    <p>A selection of brands, products and experiments I've designed with lovely clients and collaborators.</p>
+  </section>
+
+  <section class="container">
+    <div class="filters glass" role="group" aria-label="Filter projects">
+      <button type="button" data-filter="" aria-pressed="true">All</button>
+      {categories.map((c) => <button type="button" data-filter={c} aria-pressed="false">{c}</button>)}
+    </div>
+    <div class="grid">
+      {work.map((item, i) => <WorkCard item={item} index={i} />)}
+    </div>
+  </section>
+</Base>
+
+<script>
+  const buttons = document.querySelectorAll<HTMLButtonElement>('[data-filter]');
+  const cards = document.querySelectorAll<HTMLElement>('[data-category]');
+  buttons.forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const f = btn.dataset.filter ?? '';
+      buttons.forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+      cards.forEach((c) => (c.hidden = f !== '' && c.dataset.category !== f));
+    }),
+  );
+</script>
+
+<style>
+  .filters { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; padding: 0.35rem; border-radius: 999px; margin-bottom: 2.5rem; }
+  .filters button {
+    font: 500 0.9rem var(--font-body); color: var(--muted); cursor: pointer;
+    padding: 0.55rem 1.05rem; border-radius: 999px; border: 0; background: transparent;
+    transition: color 0.2s, background 0.2s;
+  }
+  .filters button:hover { color: var(--text); }
+  .filters button[aria-pressed='true'] { background: var(--orange); color: #141414; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 3rem 1.75rem; }
+  .grid :global([hidden]) { display: none; }
+</style>

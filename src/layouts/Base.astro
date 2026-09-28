@@ -1,14 +1,17 @@
 ---
 import '../styles/global.css';
 import Header from '../components/Header.astro';
-import { profile } from '../data/profile';
+import Footer from '../components/Footer.astro';
+import GlitchButton from '../components/GlitchButton.astro';
+import { site } from '../data/site';
+import { url } from '../utils';
 
 interface Props {
   title?: string;
   description?: string;
 }
-const { title, description = profile.tagline } = Astro.props;
-const fullTitle = title ? `${title} · ${profile.name}` : `${profile.name} · ${profile.role}`;
+const { title, description = site.intro } = Astro.props;
+const fullTitle = title ? `${title} — ${site.name}` : `${site.name} — ${site.role}`;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 ---
 <!doctype html>
@@ -18,32 +21,30 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
+    <meta name="theme-color" content="#19191b" />
     <link rel="canonical" href={canonical} />
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
     <meta property="og:url" content={canonical} />
-    <link rel="icon" href={`${import.meta.env.BASE_URL.replace(/\/$/, '')}/favicon.svg`} type="image/svg+xml" />
-    <script is:inline>
-      // Apply the saved or system theme before paint to avoid a flash.
-      try {
-        const saved = localStorage.getItem('theme');
-        const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
-        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-      } catch {}
-    </script>
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href={url('favicon.svg')} type="image/svg+xml" />
+    <script is:inline>document.documentElement.classList.add('js');</script>
   </head>
   <body>
+    <div class="atmosphere" aria-hidden="true"><span class="a"></span><span class="b"></span><span class="c"></span></div>
     <Header />
     <main>
       <slot />
     </main>
-    <footer class="container footer">
-      <p class="muted">© {new Date().getFullYear()} {profile.name}. Built with Astro, hosted on GitLab Pages.</p>
-    </footer>
+    <Footer />
+    <GlitchButton />
+    <script>
+      const io = new IntersectionObserver(
+        (entries) => entries.forEach((e) => e.isIntersecting && (e.target.classList.add('in'), io.unobserve(e.target))),
+        { rootMargin: '0px 0px -8% 0px' },
+      );
+      document.querySelectorAll('[data-reveal]').forEach((el) => io.observe(el));
+    </script>
   </body>
 </html>
-
-<style>
-  .footer { padding: 2.5rem 1.25rem; border-top: 1px solid var(--border); font-size: .9rem; }
-</style>

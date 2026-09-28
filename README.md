@@ -1,43 +1,41 @@
-# Portfolio
+# Keay — Designer
 
-A personal portfolio built with [Astro](https://astro.build) and deployed free with **GitLab Pages**. The source code stays private; only the built website is public.
+Portfolio website for Keay. Built with [Astro](https://astro.build): modern grey theme with an orange accent, film-grain texture, glass panels, and a small **glitch** button on the right edge that wrecks the whole page for 2 seconds (just for fun).
 
-## Features
+## Pages
 
-- Home page with hero, about, skills, featured projects, experience, education and contact
-- Projects page with tag filters, plus a detail page for each project, written in Markdown
-- Dark / light mode (follows the system setting, remembers the visitor's choice)
-- Responsive, accessible, zero JavaScript frameworks, fast
-- SEO meta and Open Graph tags, custom 404 page
-- Optional CV download and profile photo
-- Auto-deploys on every push to the default branch
+| Page | Path | Content comes from |
+|---|---|---|
+| Home | `/` | `src/data/site.ts` + featured work + latest tips |
+| Work | `/work` (filterable) and `/work/<project>` | `src/content/work/*.md` |
+| Tools & Tips | `/tools` and `/tools/<tip>` | toolkit in `src/data/site.ts`, tips in `src/content/tips/*.md` |
+| About me | `/about` | `src/data/site.ts` |
+| Contact | `/contact` | `src/data/site.ts` |
 
-## Make it yours
+## Editing
 
-| What | Where |
-|---|---|
-| Name, bio, skills, experience, links | `src/data/profile.ts` |
-| Projects | one `.md` file per project in `src/content/projects/` |
-| Photo, CV, project images | put files in `static/` and reference them by file name |
-| Colors | CSS variables at the top of `src/styles/global.css` |
+- **Your details** (email, bio, services, experience, clients, socials, tools): `src/data/site.ts`
+- **Add a project:** copy a file in `src/content/work/` and edit it. Put images in `static/work/` and set `cover: work/my-image.jpg`. Without an image, a generated cover is used (`tone: ember | slate | ash`). Set `featured: true` to show it on the home page, and use `order` to sort.
+- **Add a tip:** copy a file in `src/content/tips/`.
+- **Photo / CV:** put `keay.jpg` / `cv.pdf` in `static/` and set `portrait` / `resume` in `site.ts`.
+- **Contact form:** create a free form at [formspree.io](https://formspree.io) and paste its URL into `formEndpoint`. Until then, the form opens the visitor's email app.
+- **Colors:** CSS variables at the top of `src/styles/global.css` (`--orange`, greys).
+- **Glitch effect:** `src/scripts/glitch.ts`. It respects "reduce motion" settings with a gentler version.
 
-Set `draft: true` in a project's front matter to hide it.
+Quote any front-matter text that contains a colon, e.g. `summary: "Part one: part two"`.
 
 ## Run locally
 
 ```bash
 npm install
 npm run dev      # http://localhost:4321
-npm run build    # outputs to public/
+npm run build    # outputs the site to public/
 ```
 
-## Deploy on GitLab Pages (private repo)
+## Deploy for free with the code kept private
 
-1. Create a **private** project on GitLab and push this code to it.
-2. GitLab runs `.gitlab-ci.yml` automatically. Wait for the `pages` job to pass (**Build → Pipelines**).
-3. Go to **Deploy → Pages** to see your site URL.
-4. **Important:** In a private project, Pages is visible only to project members by default. To make the site public, go to
-   **Settings → General → Visibility, project features, permissions → Pages** and choose **Everyone**. The code stays private.
-5. Optional: add a custom domain under **Deploy → Pages → New domain**.
+**Cloudflare Pages (from a private GitHub repo):** Workers & Pages → Create → Pages → Connect to Git → pick the repo.
+Build command `npm run build`, output directory `public`.
 
-Base paths are handled automatically: the build reads GitLab's `CI_PAGES_URL`, so the site works at both `name.gitlab.io` and `name.gitlab.io/project`.
+**GitLab Pages (private GitLab project):** push the code to GitLab; `.gitlab-ci.yml` builds and publishes on every push to the default branch.
+Then set **Settings → General → Visibility → Pages → Everyone** so the site is public while the code stays private.

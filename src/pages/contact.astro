@@ -1,0 +1,126 @@
+---
+import Base from '../layouts/Base.astro';
+import { site } from '../data/site';
+---
+<Base title="Contact" description={`Get in touch with ${site.name}.`}>
+  <section class="page-hero container">
+    <p class="eyebrow">{site.availability}</p>
+    <h1>Say hello<span class="accent">.</span></h1>
+    <p>Tell me about your project, idea or question. I usually reply within two working days.</p>
+  </section>
+
+  <section class="container grid">
+    <form class="form glass" method="POST" action={site.formEndpoint || undefined} data-email={site.email} data-reveal>
+      <div class="row">
+        <label>Name<input name="name" autocomplete="name" required /></label>
+        <label>Email<input type="email" name="email" autocomplete="email" required /></label>
+      </div>
+      <fieldset>
+        <legend>What do you need?</legend>
+        <div class="options">
+          {site.services.map((s, i) => (
+            <label class="pill"><input type="checkbox" name="services" value={s.title} /><span>{s.title}</span></label>
+          ))}
+        </div>
+      </fieldset>
+      <label>Budget
+        <select name="budget">
+          <option value="">Choose a range</option>
+          <option>Under $2k</option>
+          <option>$2k – $5k</option>
+          <option>$5k – $10k</option>
+          <option>$10k+</option>
+        </select>
+      </label>
+      <label>Message<textarea name="message" rows="5" required placeholder="A few words about the project…"></textarea></label>
+      <button class="btn primary" type="submit">Send message <span class="arrow">→</span></button>
+      <p class="status muted" role="status" aria-live="polite"></p>
+    </form>
+
+    <aside class="side">
+      <div class="card glass" data-reveal>
+        <p class="eyebrow">Email</p>
+        <a class="big" href={`mailto:${site.email}`}>{site.email}</a>
+      </div>
+      <div class="card glass" data-reveal>
+        <p class="eyebrow">Elsewhere</p>
+        <ul>
+          {site.socials.map((s) => <li><a href={s.url} target="_blank" rel="noopener me">{s.label} <span class="accent">↗</span></a></li>)}
+        </ul>
+      </div>
+      <div class="card glass" data-reveal>
+        <p class="eyebrow">Location</p>
+        <p class="loc">{site.location}</p>
+      </div>
+    </aside>
+  </section>
+</Base>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>('.form');
+  const status = form?.querySelector<HTMLElement>('.status');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const set = (msg: string) => status && (status.textContent = msg);
+
+    // No form service configured: open the visitor's email app instead.
+    if (!form.getAttribute('action')) {
+      const services = data.getAll('services').join(', ');
+      const body = [`Name: ${data.get('name')}`, `Email: ${data.get('email')}`, services && `Services: ${services}`, data.get('budget') && `Budget: ${data.get('budget')}`, '', data.get('message')].filter((l) => l !== '' && l !== null).join('\n');
+      location.href = `mailto:${form.dataset.email}?subject=${encodeURIComponent(`Project inquiry from ${data.get('name')}`)}&body=${encodeURIComponent(body)}`;
+      set('Opening your email app…');
+      return;
+    }
+
+    set('Sending…');
+    try {
+      const res = await fetch(form.action, { method: 'POST', body: data, headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error();
+      form.reset();
+      set("Thanks! Your message is on its way. I'll get back to you soon.");
+    } catch {
+      set(`Something went wrong. Please email ${form.dataset.email} directly.`);
+    }
+  });
+</script>
+
+<style>
+  .grid { display: grid; grid-template-columns: 7fr 5fr; gap: 1.25rem; align-items: start; padding-bottom: 2rem; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .form { padding: clamp(1.4rem, 4vw, 2.4rem); display: grid; gap: 1.3rem; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+  label, legend { display: grid; gap: 0.5rem; font: 0.75rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  input:not([type='checkbox']), textarea, select {
+    width: 100%; font: 1rem var(--font-body); color: var(--text); text-transform: none; letter-spacing: 0;
+    background: rgba(0, 0, 0, 0.22); border: 1px solid var(--line); border-radius: 14px;
+    padding: 0.85rem 1rem; transition: border-color 0.2s, background 0.2s;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--orange); background: rgba(0, 0, 0, 0.32); }
+  select option { background: var(--bg-2); }
+  textarea { resize: vertical; }
+  fieldset { border: 0; padding: 0; margin: 0; }
+  legend { margin-bottom: 0.6rem; }
+  .options { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .pill { display: inline-flex; cursor: pointer; }
+  .pill input { position: absolute; opacity: 0; pointer-events: none; }
+  .pill span {
+    padding: 0.55rem 1rem; border-radius: 999px; border: 1px solid var(--line);
+    font: 0.9rem var(--font-body); text-transform: none; letter-spacing: 0; color: var(--text);
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+  .pill input:checked + span { background: var(--orange); border-color: var(--orange); color: #141414; }
+  .pill input:focus-visible + span { outline: 2px solid var(--orange); outline-offset: 2px; }
+  .form .btn { justify-self: start; }
+  .status { margin: 0; min-height: 1.5em; }
+
+  .side { display: grid; gap: 1.25rem; }
+  .card { padding: 1.5rem; }
+  .big { display: block; margin-top: 0.8rem; font: 600 clamp(1.3rem, 3vw, 1.8rem) var(--font-display); letter-spacing: -0.02em; text-decoration: none; overflow-wrap: anywhere; }
+  .big:hover { color: var(--orange); }
+  .card ul { list-style: none; padding: 0; margin: 0.8rem 0 0; display: grid; gap: 0.6rem; }
+  .card ul a { text-decoration: none; }
+  .card ul a:hover { color: var(--orange); }
+  .loc { margin: 0.8rem 0 0; }
+</style>

@@ -1,0 +1,31 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { url, formatDate } from '../../utils';
+
+export async function getStaticPaths() {
+  const tips = await getCollection('tips', ({ data }) => !data.draft);
+  return tips.map((tip) => ({ params: { id: tip.id }, props: { tip } }));
+}
+
+interface Props { tip: CollectionEntry<'tips'> }
+const { tip } = Astro.props;
+const { Content } = await render(tip);
+---
+<Base title={tip.data.title} description={tip.data.summary}>
+  <article class="container">
+    <header class="page-hero">
+      <a class="link" href={url('tools')}>← Tools & Tips</a>
+      <h1>{tip.data.title}</h1>
+      <p>{tip.data.summary}</p>
+      <div class="meta"><span class="chip">{tip.data.tag}</span><span class="muted">{formatDate(tip.data.date)}</span></div>
+    </header>
+    <div class="prose"><Content /></div>
+  </article>
+</Base>
+
+<style>
+  .page-hero h1 { font-size: clamp(2.4rem, 6vw, 4.5rem); max-width: 18ch; }
+  .meta { display: flex; align-items: center; gap: 1rem; font: 0.8rem var(--font-mono); }
+  .prose { padding-bottom: 3rem; }
+</style>

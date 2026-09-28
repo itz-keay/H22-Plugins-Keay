@@ -1,0 +1,37 @@
+---
+import { site } from '../data/site';
+import { url } from '../utils';
+---
+<footer class="site-footer">
+  <div class="container">
+    <div class="cta glass" data-reveal>
+      <p class="eyebrow">{site.availability}</p>
+      <h2>Got an idea?<br /><span class="accent">Let's make it real.</span></h2>
+      <div class="row">
+        <a class="btn primary" href={url('contact')}>Start a project <span class="arrow">→</span></a>
+        <a class="btn" href={`mailto:${site.email}`}>{site.email}</a>
+      </div>
+    </div>
+    <div class="bottom">
+      <p class="muted">© {new Date().getFullYear()} {site.name} — {site.role}</p>
+      <ul>
+        {site.socials.map((s) => <li><a class="link" href={s.url} target="_blank" rel="noopener me">{s.label}</a></li>)}
+      </ul>
+    </div>
+  </div>
+</footer>
+
+<style>
+  .site-footer { padding: 4rem 0 2rem; }
+  .cta { padding: clamp(2rem, 6vw, 4.5rem); position: relative; overflow: hidden; }
+  .cta::after {
+    content: ''; position: absolute; width: 26rem; height: 26rem; right: -8rem; bottom: -14rem;
+    background: radial-gradient(circle, rgba(255, 107, 44, 0.35), transparent 65%);
+    pointer-events: none;
+  }
+  h2 { font-size: clamp(2.2rem, 7vw, 5rem); margin: 1.2rem 0 2rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 0.75rem; position: relative; z-index: 1; }
+  .bottom { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 2.5rem; font-size: 0.9rem; }
+  .bottom p { margin: 0; }
+  ul { display: flex; flex-wrap: wrap; gap: 1.25rem; list-style: none; margin: 0; padding: 0; }
+</style>

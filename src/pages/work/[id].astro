@@ -1,0 +1,65 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import WorkCard from '../../components/WorkCard.astro';
+import { url } from '../../utils';
+
+export async function getStaticPaths() {
+  const work = (await getCollection('work', ({ data }) => !data.draft)).sort((a, b) => a.data.order - b.data.order);
+  return work.map((item, i) => ({ params: { id: item.id }, props: { item, next: work[(i + 1) % work.length] } }));
+}
+
+interface Props { item: CollectionEntry<'work'>; next: CollectionEntry<'work'> }
+const { item, next } = Astro.props;
+const { title, client, year, category, summary, role, cover, tone } = item.data;
+const { Content } = await render(item);
+---
+<Base title={title} description={summary}>
+  <article>
+    <header class="page-hero container">
+      <a class="link" href={url('work')}>← All work</a>
+      <h1>{title}<span class="accent">.</span></h1>
+      <p>{summary}</p>
+      <dl class="facts glass">
+        <div><dt>Client</dt><dd>{client}</dd></div>
+        <div><dt>Year</dt><dd>{year}</dd></div>
+        <div><dt>Discipline</dt><dd>{category}</dd></div>
+        {role && <div><dt>Role</dt><dd>{role}</dd></div>}
+      </dl>
+    </header>
+
+    <div class="container">
+      <div class={`hero-img tone-${tone}`}>
+        {cover ? <img src={url(cover)} alt={`${title} cover`} /> : <span aria-hidden="true">{title}</span>}
+      </div>
+      <div class="prose body"><Content /></div>
+    </div>
+  </article>
+
+  {next.id !== item.id && (
+    <section class="section container">
+      <p class="eyebrow">Next project</p>
+      <div class="next"><WorkCard item={next} large /></div>
+    </section>
+  )}
+</Base>
+
+<style>
+  .page-hero h1 { font-size: clamp(3rem, 10vw, 7rem); }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1.25rem; padding: 1.25rem 1.5rem; margin: 2.5rem 0 0; }
+  dt { font: 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  dd { margin: 0.25rem 0 0; }
+  .hero-img {
+    aspect-ratio: 16 / 8; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line);
+    display: grid; place-items: center;
+  }
+  .hero-img img { width: 100%; height: 100%; object-fit: cover; }
+  .hero-img span { font: 600 clamp(3rem, 14vw, 11rem) var(--font-display); letter-spacing: -0.06em; mix-blend-mode: overlay; color: #fff; }
+  .tone-slate span { mix-blend-mode: normal; color: rgba(236, 235, 232, 0.88); }
+  .tone-slate { background: radial-gradient(120% 90% at 20% 10%, #45454c, #232326 60%, #1a1a1c); }
+  .tone-ember { background: radial-gradient(120% 90% at 80% 10%, #ff7a3d, #b8431a 45%, #2a1a14 90%); }
+  .tone-ash { background: linear-gradient(135deg, #d8d6d2, #9c9a96 55%, #5e5d5a); }
+  .tone-ash span { color: #1a1a1c; mix-blend-mode: normal; opacity: 0.8; }
+  .body { margin: 4rem auto 0; }
+  .next { margin-top: 1.5rem; }
+</style>

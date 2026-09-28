@@ -2,15 +2,17 @@
 import Base from '../layouts/Base.astro';
 import { url } from '../utils';
 ---
-<Base title="Page not found">
-  <section class="container nf">
-    <h1>404</h1>
-    <p class="muted">This page doesn't exist.</p>
-    <a class="btn primary" href={url()}>Back home</a>
+<Base title="Lost">
+  <section class="page-hero container nf">
+    <p class="eyebrow">Error 404</p>
+    <h1>Page not found<span class="accent">.</span></h1>
+    <p>Maybe it glitched out of existence. Try the button on the right to see how that happens.</p>
+    <a class="btn primary" href={url()}>Back home <span class="arrow">→</span></a>
   </section>
 </Base>
 
 <style>
-  .nf { padding: 8rem 1.25rem; text-align: center; }
-  h1 { font-size: 4rem; margin: 0; }
+  .nf { min-height: 80vh; }
+  .nf h1 { font-size: clamp(2.8rem, 9vw, 6.5rem); }
+  .nf p { margin-bottom: 2rem; }
 </style>

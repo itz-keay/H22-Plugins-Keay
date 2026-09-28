@@ -1,0 +1,82 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { site } from '../../data/site';
+import { url, formatDate } from '../../utils';
+
+const tips = (await getCollection('tips', ({ data }) => !data.draft)).sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+---
+<Base title="Tools & Tips" description="The tools I use every day and the design tips I've picked up along the way.">
+  <section class="page-hero container">
+    <p class="eyebrow">Toolkit & notes</p>
+    <h1>Tools <span class="accent">&</span> Tips</h1>
+    <p>The apps I rely on every day, plus small lessons that make design work faster and better.</p>
+  </section>
+
+  <section class="container">
+    <div class="section-head"><h2>My toolkit</h2></div>
+    <div class="tools">
+      {site.tools.map((g) => (
+        <div class="group glass" data-reveal>
+          <p class="eyebrow">{g.group}</p>
+          <ul>
+            {g.items.map((t) => (
+              <li>
+                <span class="initial" aria-hidden="true">{t.name[0]}</span>
+                <div><strong>{t.name}</strong><p class="muted">{t.note}</p></div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section class="section container">
+    <div class="section-head"><h2>Tips</h2></div>
+    <ol class="list">
+      {tips.map((t, i) => (
+        <li data-reveal>
+          <a href={url(`tools/${t.id}`)}>
+            <span class="n">{String(i + 1).padStart(2, '0')}</span>
+            <span class="t"><strong>{t.data.title}</strong><span class="muted">{t.data.summary}</span></span>
+            <span class="chip">{t.data.tag}</span>
+            <span class="d muted">{formatDate(t.data.date)}</span>
+            <span class="go" aria-hidden="true">↗</span>
+          </a>
+        </li>
+      ))}
+    </ol>
+  </section>
+</Base>
+
+<style>
+  .section-head h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); }
+  .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 1rem; }
+  .group { padding: 1.6rem; }
+  .group ul { list-style: none; padding: 0; margin: 1.3rem 0 0; display: grid; gap: 1.1rem; }
+  .group li { display: flex; gap: 0.9rem; align-items: start; }
+  .initial {
+    flex: none; display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 12px;
+    background: var(--bg-3); border: 1px solid var(--line); font: 600 1rem var(--font-display); color: var(--orange);
+  }
+  .group p { margin: 0.1rem 0 0; font-size: 0.9rem; }
+
+  .list { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--line); }
+  .list a {
+    display: grid; grid-template-columns: 3rem 1fr auto auto 1.5rem; align-items: center; gap: 1.25rem;
+    padding: 1.6rem 0.5rem; border-bottom: 1px solid var(--line); text-decoration: none;
+    transition: background 0.3s, padding 0.3s var(--ease);
+  }
+  .list a:hover { background: rgba(255, 255, 255, 0.025); padding-left: 1.2rem; }
+  .n { font: 0.8rem var(--font-mono); color: var(--orange); }
+  .t { display: flex; flex-direction: column; gap: 0.2rem; }
+  .t strong { font: 600 1.35rem var(--font-display); letter-spacing: -0.02em; }
+  .d { font: 0.78rem var(--font-mono); }
+  .go { color: var(--orange); transition: transform 0.3s var(--ease); }
+  .list a:hover .go { transform: translate(3px, -3px); }
+  @media (max-width: 720px) {
+    .list a { grid-template-columns: 2.2rem 1fr; }
+    .chip, .d, .go { display: none; }
+  }
+</style>

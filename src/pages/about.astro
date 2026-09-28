@@ -1,0 +1,80 @@
+---
+import Base from '../layouts/Base.astro';
+import { site } from '../data/site';
+import { url } from '../utils';
+---
+<Base title="About me" description={`About ${site.name}, ${site.role}.`}>
+  <section class="page-hero container">
+    <p class="eyebrow">About me</p>
+    <h1>Hi, I'm {site.name}<span class="accent">.</span></h1>
+  </section>
+
+  <section class="container intro">
+    <div class={`portrait ${site.portrait ? '' : 'empty'}`} data-reveal>
+      {site.portrait ? <img src={url(site.portrait)} alt={`Portrait of ${site.name}`} /> : <span aria-hidden="true">K</span>}
+      <span class="badge glass">{site.location}</span>
+    </div>
+    <div class="text" data-reveal>
+      {site.about.map((p, i) => <p class={i === 0 ? 'lead' : 'muted'}>{p}</p>)}
+      <div class="actions">
+        <a class="btn primary" href={url('contact')}>Work with me <span class="arrow">→</span></a>
+        {site.resume && <a class="btn" href={url(site.resume)} download>Download CV</a>}
+      </div>
+    </div>
+  </section>
+
+  <section class="section container split">
+    <div>
+      <p class="eyebrow">Experience</p>
+      <ol class="xp">
+        {site.experience.map((e) => (
+          <li data-reveal>
+            <span class="muted period">{e.period}</span>
+            <strong>{e.title}</strong>
+            <span class="muted">{e.org}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+    <div>
+      <p class="eyebrow">Services</p>
+      <ul class="services">
+        {site.services.map((s) => <li data-reveal><strong>{s.title}</strong><span class="muted">{s.text}</span></li>)}
+      </ul>
+    </div>
+  </section>
+
+  <section class="container clients-wrap">
+    <p class="eyebrow">Brands I've worked with</p>
+    <ul class="clients">
+      {site.clients.map((c) => <li class="glass">{c}</li>)}
+    </ul>
+  </section>
+</Base>
+
+<style>
+  .intro { display: grid; grid-template-columns: 5fr 7fr; gap: clamp(2rem, 5vw, 5rem); align-items: start; }
+  @media (max-width: 820px) { .intro { grid-template-columns: 1fr; } }
+  .portrait { position: relative; aspect-ratio: 4 / 5; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
+  .portrait img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1) contrast(1.05); }
+  .portrait.empty { display: grid; place-items: center; background: radial-gradient(100% 80% at 70% 0%, #ff7a3d, #3a2a22 55%, #1f1f22); }
+  .portrait.empty > span:first-child { font: 600 14rem var(--font-display); letter-spacing: -0.06em; color: #fff; mix-blend-mode: overlay; }
+  .badge { position: absolute; left: 1rem; bottom: 1rem; padding: 0.5rem 0.9rem; border-radius: 999px; font-size: 0.85rem; }
+  .lead { font: 500 clamp(1.5rem, 3vw, 2.2rem)/1.25 var(--font-display); letter-spacing: -0.02em; margin-bottom: 1.5rem; }
+  .text .muted { font-size: 1.08rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 2rem; }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
+  @media (max-width: 820px) { .split { grid-template-columns: 1fr; } }
+  .xp, .services { list-style: none; padding: 0; margin: 1.5rem 0 0; border-top: 1px solid var(--line); }
+  .xp li { display: grid; grid-template-columns: 8rem 1fr auto; gap: 1rem; padding: 1.2rem 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .period { font: 0.8rem var(--font-mono); }
+  @media (max-width: 520px) { .xp li { grid-template-columns: 1fr; gap: 0.2rem; } }
+  .services li { display: flex; flex-direction: column; gap: 0.2rem; padding: 1.2rem 0; border-bottom: 1px solid var(--line); }
+  strong { font: 600 1.15rem var(--font-display); letter-spacing: -0.01em; }
+
+  .clients-wrap { padding-bottom: 2rem; }
+  .clients { list-style: none; padding: 0; margin: 1.5rem 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.75rem; }
+  .clients li { padding: 1.6rem 1rem; text-align: center; font: 600 1.25rem var(--font-display); letter-spacing: -0.02em; color: var(--muted); transition: color 0.3s; }
+  .clients li:hover { color: var(--text); }
+</style>
