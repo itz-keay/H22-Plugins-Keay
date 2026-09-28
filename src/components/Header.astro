@@ -1,0 +1,57 @@
+---
+import { profile } from '../data/profile';
+import { url } from '../utils';
+
+const nav = [
+  { label: 'About', href: url('#about') },
+  { label: 'Projects', href: url('projects') },
+  { label: 'Experience', href: url('#experience') },
+  { label: 'Contact', href: url('#contact') },
+];
+---
+<header class="header">
+  <div class="container bar">
+    <a class="brand" href={url()}>{profile.name}</a>
+    <nav aria-label="Main">
+      <ul>
+        {nav.map((item) => <li><a href={item.href}>{item.label}</a></li>)}
+      </ul>
+    </nav>
+    <button class="theme" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">
+      <span aria-hidden="true">◐</span>
+    </button>
+  </div>
+</header>
+
+<script>
+  document.querySelector('.theme')?.addEventListener('click', () => {
+    const root = document.documentElement;
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    try { localStorage.setItem('theme', next); } catch {}
+  });
+</script>
+
+<style>
+  .header {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 85%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .bar { display: flex; align-items: center; gap: 1rem; height: 4rem; }
+  .brand { font-weight: 700; color: var(--text); text-decoration: none; margin-right: auto; white-space: nowrap; }
+  ul { display: flex; gap: 1.1rem; list-style: none; margin: 0; padding: 0; }
+  nav a { color: var(--muted); text-decoration: none; font-size: .95rem; }
+  nav a:hover { color: var(--text); }
+  .theme {
+    width: 2.25rem; height: 2.25rem; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    cursor: pointer; font-size: 1.2rem; line-height: 1;
+  }
+  @media (max-width: 560px) {
+    .bar { height: auto; flex-wrap: wrap; padding-top: .75rem; padding-bottom: .75rem; }
+    nav { order: 3; width: 100%; }
+    ul { gap: .9rem; overflow-x: auto; }
+  }
+</style>

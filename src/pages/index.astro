@@ -1,0 +1,124 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import ProjectCard from '../components/ProjectCard.astro';
+import { profile } from '../data/profile';
+import { url } from '../utils';
+
+const projects = (await getCollection('projects', ({ data }) => !data.draft))
+  .sort((a, b) => Number(b.data.featured) - Number(a.data.featured) || b.data.date.valueOf() - a.data.date.valueOf())
+  .slice(0, 4);
+---
+<Base>
+  <section class="hero container">
+    {profile.avatar && <img class="avatar" src={url(profile.avatar)} alt={profile.name} width="112" height="112" />}
+    <p class="eyebrow">{profile.role} · {profile.location}</p>
+    <h1>{profile.name}</h1>
+    <p class="lead">{profile.tagline}</p>
+    <div class="actions">
+      <a class="btn primary" href={url('projects')}>View projects</a>
+      <a class="btn" href={`mailto:${profile.email}`}>Get in touch</a>
+      {profile.resume && <a class="btn" href={url(profile.resume)} download>Download CV</a>}
+    </div>
+  </section>
+
+  <section id="about" class="section">
+    <div class="container two-col">
+      <div class="prose">
+        <h2>About</h2>
+        {profile.about.map((p) => <p>{p}</p>)}
+      </div>
+      <div>
+        <h2>Skills</h2>
+        {profile.skills.map((s) => (
+          <div class="skill">
+            <h3>{s.group}</h3>
+            <ul class="tags">{s.items.map((i) => <li class="tag">{i}</li>)}</ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section id="projects" class="section">
+    <div class="container">
+      <div class="heading-row">
+        <h2>Selected projects</h2>
+        <a href={url('projects')}>All projects →</a>
+      </div>
+      <div class="grid">
+        {projects.map((p) => <ProjectCard project={p} />)}
+      </div>
+    </div>
+  </section>
+
+  <section id="experience" class="section">
+    <div class="container two-col">
+      <div>
+        <h2>Experience</h2>
+        <ol class="timeline">
+          {profile.experience.map((e) => (
+            <li>
+              <p class="muted period">{e.period}</p>
+              <h3>{e.title} <span class="muted">· {e.org}</span></h3>
+              <p>{e.summary}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
+      <div>
+        <h2>Education</h2>
+        <ol class="timeline">
+          {profile.education.map((e) => (
+            <li>
+              <p class="muted period">{e.period}</p>
+              <h3>{e.title} <span class="muted">· {e.org}</span></h3>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact" class="section">
+    <div class="container contact">
+      <h2>Let's work together</h2>
+      <p class="muted">Open to new opportunities and collaborations. The fastest way to reach me is email.</p>
+      <a class="btn primary" href={`mailto:${profile.email}`}>{profile.email}</a>
+      <ul class="links">
+        {profile.links.map((l) => <li><a href={l.url} rel="me noopener" target="_blank">{l.label}</a></li>)}
+      </ul>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero { padding: 6rem 1.25rem 4rem; }
+  .avatar { border-radius: 50%; margin-bottom: 1.5rem; object-fit: cover; }
+  .eyebrow { color: var(--accent); font-weight: 600; margin: 0; }
+  h1 { font-size: clamp(2.4rem, 7vw, 4rem); margin: .3rem 0 .8rem; }
+  .lead { font-size: 1.25rem; color: var(--muted); max-width: 36rem; margin: 0 0 2rem; }
+  .actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+
+  .two-col { display: grid; grid-template-columns: 3fr 2fr; gap: 3rem; }
+  @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+  .skill h3 { font-size: .95rem; margin: 0 0 .5rem; color: var(--muted); font-weight: 600; }
+  .skill { margin-bottom: 1.25rem; }
+
+  .heading-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr)); gap: 1.25rem; }
+
+  .timeline { list-style: none; padding: 0 0 0 1.25rem; margin: 0; border-left: 2px solid var(--border); }
+  .timeline li { position: relative; padding-bottom: 1.5rem; }
+  .timeline li::before {
+    content: ''; position: absolute; left: calc(-1.25rem - 6px); top: .45rem;
+    width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+  }
+  .timeline h3 { font-size: 1.05rem; margin: .1rem 0 .3rem; }
+  .timeline p { margin: 0; }
+  .period { font-size: .85rem; }
+
+  .contact { text-align: center; }
+  .contact p { margin: 0 auto 1.5rem; max-width: 32rem; }
+  .links { display: flex; justify-content: center; flex-wrap: wrap; gap: 1.25rem; list-style: none; padding: 0; margin: 2rem 0 0; }
+</style>

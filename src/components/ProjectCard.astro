@@ -1,0 +1,34 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { url, formatDate } from '../utils';
+
+interface Props { project: CollectionEntry<'projects'> }
+const { project } = Astro.props;
+const { title, summary, tags, image, date } = project.data;
+---
+<article class="card">
+  {image && <img src={url(image)} alt="" loading="lazy" />}
+  <div class="body">
+    <p class="date muted">{formatDate(date)}</p>
+    <h3><a href={url(`projects/${project.id}`)}>{title}</a></h3>
+    <p class="muted">{summary}</p>
+    <ul class="tags">{tags.map((t) => <li class="tag">{t}</li>)}</ul>
+  </div>
+</article>
+
+<style>
+  .card {
+    position: relative; overflow: hidden;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    transition: border-color .15s, transform .15s;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  img { aspect-ratio: 16 / 9; object-fit: cover; width: 100%; border-bottom: 1px solid var(--border); }
+  .body { padding: 1.25rem; }
+  h3 { margin: .1rem 0 .4rem; font-size: 1.15rem; }
+  h3 a { color: var(--text); text-decoration: none; }
+  /* Make the whole card clickable. */
+  h3 a::after { content: ''; position: absolute; inset: 0; }
+  .date { margin: 0; font-size: .85rem; }
+  p { margin: 0 0 1rem; }
+</style>

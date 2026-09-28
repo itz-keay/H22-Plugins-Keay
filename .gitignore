@@ -1,0 +1,7 @@
+node_modules/
+public/
+.astro/
+.npm/
+.env
+.env.*
+.DS_Store
